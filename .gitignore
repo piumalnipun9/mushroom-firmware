@@ -1,0 +1,18 @@
+# Arduino / PlatformIO / ESP32
+.pio
+pioenvs
+build
+.vscode
+.env
+*.bin
+*.elf
+*.hex
+*.log
+*.pyc
+.DS_Store
+
+# Arduino sketch build files
+*.ino.*
+
+# build artifacts
+lib/.cache
