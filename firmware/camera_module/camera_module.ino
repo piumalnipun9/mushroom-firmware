@@ -16,9 +16,8 @@
 #include "esp_camera.h"
 #include <WebServer.h>
 
-// Replace with your network credentials
-const char *WIFI_SSID = "YOUR_WIFI_SSID";
-const char *WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
+const char *WIFI_SSID = "Pixel_9483";
+const char *WIFI_PASSWORD = "12345678";
 
 // AI-Thinker ESP32-CAM pins
 #define PWDN_GPIO_NUM 32
@@ -40,7 +39,24 @@ const char *WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
 #define PCLK_GPIO_NUM 22
 
 WebServer server(80);
+String lastPublishedIP = "";
 
+void publishCameraStreamIfNeeded()
+{
+    if (!WiFiManagerMod::connected())
+        return;
+    String ip = WiFi.localIP().toString();
+    if (ip.length() == 0)
+        return;
+    if (ip != lastPublishedIP)
+    {
+        lastPublishedIP = ip;
+        String streamUrl = String("http://") + ip + String(":81/stream");
+        String payload = String("\"") + streamUrl + String("\"");
+        int code = FirebaseHTTP::put("camera/streamUrl", payload);
+        Serial.printf("PUT /camera/streamUrl -> %d (%s)\n", code, streamUrl.c_str());
+    }
+}
 void handleCapture()
 {
     camera_fb_t *fb = esp_camera_fb_get();
@@ -145,6 +161,7 @@ void setup()
 
 void loop()
 {
+    publishCameraStreamIfNeeded();
     server.handleClient();
     delay(2);
 }

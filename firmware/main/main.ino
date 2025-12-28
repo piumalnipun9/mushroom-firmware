@@ -9,20 +9,21 @@
 #include "Camera.h"
 
 // ---- Configuration: set these before upload ----
-const char *WIFI_SSID = "YOUR_WIFI_SSID";
-const char *WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
+const char *WIFI_SSID = "Pixel_9483";
+const char *WIFI_PASSWORD = "12345678";
 
 // Example Firebase from repository; replace with your DB host and secret
-const char *FIREBASE_HOST = "https://project-mushroom-2f8a9-default-rtdb.asia-southeast1.firebasedatabase.app";
-const char *FIREBASE_SECRET = ""; // if using database secret, put it here
+const char *FIREBASE_HOST = "https://project-mushroom-2f8a9-default-rtdb.asia-southeast1.firebasedatabase.app/";
+const char *FIREBASE_SECRET = "ZT0lSGdPU92LVTESOaXzYd3LOFgWKyVGf3Hm1zXH"; // if using database secret, put it here
 
 // Timing
 unsigned long lastSendMs = 0;
 const unsigned long sendIntervalMs = 5000;
+// track published camera stream URL
 
 void setup()
 {
-    Serial.begin(115200);
+    Serial.begin(9600);
     delay(100);
 
     WiFiManagerMod::begin(WIFI_SSID, WIFI_PASSWORD);
@@ -31,7 +32,7 @@ void setup()
     Sensors::begin();
     Actuators::begin();
     RobotArm::begin();
-    // Camera runs on a separate ESP32 module. See camera_module.ino
+
 }
 
 void loop()
@@ -41,6 +42,9 @@ void loop()
         delay(1000);
         return;
     }
+
+    // publish camera stream URL when IP changes
+    publishCameraStreamIfNeeded();
 
     unsigned long now = millis();
     if (now - lastSendMs >= sendIntervalMs)
@@ -52,6 +56,13 @@ void loop()
         float co2 = Sensors::readCO2();
         float moist = Sensors::readMoisture();
         float ph = Sensors::readPH();
+
+        // Print sensor readings to Serial (terminal)
+        Serial.print("Temperature: ");
+        Serial.print(temp);
+        Serial.print(" C, Humidity: ");
+        Serial.print(hum);
+        Serial.println(" %");
 
         // Build current sensor JSON
         StaticJsonDocument<256> doc;
