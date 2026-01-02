@@ -1,11 +1,11 @@
-import { ref, onValue, set, push, update } from 'firebase/database';
+import { ref, onValue, set, push, update, DataSnapshot } from 'firebase/database';
 import { database } from '../config/firebase';
-import { 
-  SensorData, 
-  CurrentSensorValues, 
-  MLModelInfo, 
-  RobotArmPosition, 
-  Plot, 
+import {
+  SensorData,
+  CurrentSensorValues,
+  MLModelInfo,
+  RobotArmPosition,
+  Plot,
   SensorControlCommand,
   LightControl,
   Alert
@@ -17,7 +17,7 @@ export const subscribeSensorData = (
   callback: (data: SensorData[]) => void
 ) => {
   const sensorRef = ref(database, `sensors/${sensorType}/history`);
-  return onValue(sensorRef, (snapshot) => {
+  return onValue(sensorRef, (snapshot: DataSnapshot) => {
     const data = snapshot.val();
     if (data) {
       const dataArray = Object.values(data) as SensorData[];
@@ -32,7 +32,7 @@ export const subscribeCurrentSensorValues = (
   callback: (data: CurrentSensorValues) => void
 ) => {
   const sensorRef = ref(database, 'sensors/current');
-  return onValue(sensorRef, (snapshot) => {
+  return onValue(sensorRef, (snapshot: DataSnapshot) => {
     const data = snapshot.val();
     if (data) {
       callback(data);
@@ -68,7 +68,7 @@ export const subscribeMLModelInfo = (
   callback: (data: MLModelInfo | null) => void
 ) => {
   const modelRef = ref(database, 'mlModel');
-  return onValue(modelRef, (snapshot) => {
+  return onValue(modelRef, (snapshot: DataSnapshot) => {
     callback(snapshot.val());
   });
 };
@@ -88,7 +88,7 @@ export const subscribeRobotArmPosition = (
   callback: (data: RobotArmPosition | null) => void
 ) => {
   const robotRef = ref(database, 'robotArm');
-  return onValue(robotRef, (snapshot) => {
+  return onValue(robotRef, (snapshot: DataSnapshot) => {
     callback(snapshot.val());
   });
 };
@@ -111,7 +111,7 @@ export const updateRobotStatus = async (status: 'idle' | 'moving' | 'operating')
 // Plot Services
 export const subscribePlots = (callback: (data: Plot[]) => void) => {
   const plotsRef = ref(database, 'plots');
-  return onValue(plotsRef, (snapshot) => {
+  return onValue(plotsRef, (snapshot: DataSnapshot) => {
     const data = snapshot.val();
     if (data) {
       callback(Object.values(data));
@@ -158,7 +158,7 @@ export const triggerSensorReading = async (
 // Light Control Services
 export const subscribeLightControl = (callback: (data: LightControl | null) => void) => {
   const lightRef = ref(database, 'lightControl');
-  return onValue(lightRef, (snapshot) => {
+  return onValue(lightRef, (snapshot: DataSnapshot) => {
     callback(snapshot.val());
   });
 };
@@ -171,7 +171,7 @@ export const updateLightControl = async (control: Partial<LightControl>) => {
 // Alert Services
 export const subscribeAlerts = (callback: (data: Alert[]) => void) => {
   const alertsRef = ref(database, 'alerts');
-  return onValue(alertsRef, (snapshot) => {
+  return onValue(alertsRef, (snapshot: DataSnapshot) => {
     const data = snapshot.val();
     if (data) {
       callback(Object.entries(data).map(([id, alert]) => ({
@@ -196,5 +196,14 @@ export const createAlert = async (alert: Omit<Alert, 'id' | 'timestamp' | 'ackno
     ...alert,
     timestamp: Date.now(),
     acknowledged: false
+  });
+};
+
+// Camera URL Service
+export const subscribeCameraUrl = (callback: (url: string | null) => void) => {
+  const cameraRef = ref(database, 'camera/cameraUrl');
+  return onValue(cameraRef, (snapshot: DataSnapshot) => {
+    const url = snapshot.val();
+    callback(url || null);
   });
 };

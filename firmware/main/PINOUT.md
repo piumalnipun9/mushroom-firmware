@@ -20,13 +20,61 @@ Sensors
 - Temperature & Humidity (DHT22 or SHT3x):
   - DHT22 (single-wire): DHT_PIN = GPIO4 (needs 4.7K pull-up to 3.3V)
   - SHT3x (I2C): SDA = GPIO21, SCL = GPIO22, VCC = 3.3V, GND = GND
-- CO2 sensor (MH-Z19 using UART TTL):
-  - TX -> ESP32 RX2 (GPIO16), RX -> ESP32 TX2 (GPIO17), VCC = 5V or as sensor requires, GND = GND
-  - Use Serial2 on pins (RX=16, TX=17)
+
+- ENS160-AHT21 Air Quality Sensor (I2C) - ONLY using ENS160 for CO2:
+  - Uses standard I2C bus (shared with other I2C devices)
+  - SDA: GPIO21 (ESP32 default)
+  - SCL: GPIO22 (ESP32 default)
+  - **Power Options:**
+    - VCC/VIN: 3.3V-5V (most modules have onboard voltage regulator)
+    - If your module has VIN pin: You can use 5V safely
+    - If your module only has VCC: Check if it has a regulator, otherwise use 3.3V
+  - GND: Common GND
+  - ENS160 (Air Quality) - **Primary CO2 source**:
+    - I2C Address: 0x53 (default) or 0x52 (if ADDR pin is LOW)
+    - Provides: eCO2 (400-65000 ppm), TVOC (0-65000 ppb), AQI (1-5)
+    - Warm-up time: ~1 hour for accurate readings
+    - Initial start-up: ~3 minutes before valid readings
+  - AHT21 (Temperature & Humidity) - **NOT USED** (DHT sensor is primary):
+    - I2C Address: 0x38 (fixed)
+    - Available if you want to use it later
+
+- Soil Moisture Sensor (Analog + Digital Interface):
+  - Analog Output (AO) -> ESP32 GPIO34 (ADC1_CH6, input-only)
+  - Digital Output (DO) -> ESP32 GPIO23
+  - VCC: 3.3V-5V
+  - GND: Common GND
+  - Potentiometer on module adjusts digital threshold
+  - Analog: 0-4095 (12-bit ADC), inversely proportional to moisture
+  - Digital: LOW = wet (above threshold), HIGH = dry (below threshold)
+
+- NPK Sensor (RS485 with TTL Converter):
+  - RS485 TTL Converter connections:
+    - VCC: 3.3V-5V (match your module)
+    - GND: Common GND
+    - RO (Receiver Output) -> ESP32 GPIO25 (Software Serial RX)
+    - DI (Driver Input) <- ESP32 GPIO26 (Software Serial TX)
+    - DE (Driver Enable) + RE (Receiver Enable) -> ESP32 GPIO27
+  - NPK Sensor to RS485 Converter:
+    - A (Yellow/+): RS485 A/+ terminal
+    - B (Blue/-): RS485 B/- terminal
+    - VCC: 12V or 24V (check sensor specs)
+    - GND: Common GND
+  - Protocol: Modbus RTU
+  - Baudrate: 9600
+  - Sensor Address: 0x01 (default)
+  - Registers:
+    - Nitrogen: 0x001E
+    - Phosphorus: 0x001F
+    - Potassium: 0x0020
+  - Output unit: mg/kg
+
 - Substrate moisture (capacitive / analog):
   - MOISTURE_PIN = GPIO34 (ADC1_CH6) — input-only ADC pin; do not use for PWM
+
 - pH sensor (analog probe via amplifier):
   - PH_PIN = GPIO35 (ADC1_CH7) — input-only ADC pin; connect via recommended signal conditioning circuit and common ground
+
 - Light intensity (lux) sensor (e.g., BH1750 I2C):
   - SDA = GPIO21, SCL = GPIO22
 
@@ -81,17 +129,19 @@ Pin usage cautions
 
 Example minimal mapping (quick reference)
 
-- `GPIO4` — DHT22 data
-- `GPIO21` — I2C SDA (SHT3x, BH1750)
-- `GPIO22` — I2C SCL
-- `GPIO16` — CO2 RX (Serial2 RX)
-- `GPIO17` — CO2 TX (Serial2 TX) / WS2812 data (if not using UART)
-- `GPIO34` — Moisture (ADC)
+- `GPIO4` — DHT22 data (backup temp/humidity)
+- `GPIO21` — I2C SDA (ENS160-AHT21, BH1750, SHT3x)
+- `GPIO22` — I2C SCL (shared I2C bus)
+- `GPIO34` — Soil Moisture Analog (ADC1_CH6, input-only)
+- `GPIO23` — Soil Moisture Digital (threshold output)
+- `GPIO25` — NPK Sensor RX (Software Serial RX via RS485)
+- `GPIO26` — NPK Sensor TX (Software Serial TX via RS485)
+- `GPIO27` — NPK RS485 DE/RE (direction control)
 - `GPIO35` — pH (ADC)
-- `GPIO25` — Humidifier relay/MOSFET
-- `GPIO26` — Exhaust fan relay/MOSFET
-- `GPIO27` — Sprayer relay/MOSFET
+- `GPIO32` — Humidifier relay/MOSFET
+- `GPIO33` — Exhaust fan relay/MOSFET
 - `GPIO18` — PWM for grow lights (PWM via LEDC)
+- `GPIO16/17` — Free (previously used for MH-Z19C UART)
 - `GPIO14/12/13/15` — Stepper step/dir examples
 
 Final notes

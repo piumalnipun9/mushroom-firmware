@@ -6,7 +6,6 @@
 #include "Sensors.h"
 #include "Actuators.h"
 #include "RobotArm.h"
-#include "Camera.h"
 
 // ---- Configuration: set these before upload ----
 const char *WIFI_SSID = "Pixel_9483";
@@ -18,8 +17,12 @@ const char *FIREBASE_SECRET = "ZT0lSGdPU92LVTESOaXzYd3LOFgWKyVGf3Hm1zXH"; // if 
 
 // Timing
 unsigned long lastSendMs = 0;
-const unsigned long sendIntervalMs = 5000;
-// track published camera stream URL
+unsigned long lastHistoryMs = 0;
+unsigned long lastControlCheckMs = 0;
+
+const unsigned long sendIntervalMs = 5000;       // Current values every 5 sec
+const unsigned long historyIntervalMs = 60000;   // History every 60 sec (reduce Firebase load)
+const unsigned long controlCheckIntervalMs = 10000; // Check controls every 10 sec
 
 void setup()
 {
@@ -32,7 +35,6 @@ void setup()
     Sensors::begin();
     Actuators::begin();
     RobotArm::begin();
-
 }
 
 void loop()
@@ -43,10 +45,9 @@ void loop()
         return;
     }
 
-    // publish camera stream URL when IP changes
-    publishCameraStreamIfNeeded();
-
     unsigned long now = millis();
+    
+    // ===== Read sensors and update current values every 5 seconds =====
     if (now - lastSendMs >= sendIntervalMs)
     {
         lastSendMs = now;
@@ -57,14 +58,11 @@ void loop()
         float moist = Sensors::readMoisture();
         float ph = Sensors::readPH();
 
-        // Print sensor readings to Serial (terminal)
-        Serial.print("Temperature: ");
-        Serial.print(temp);
-        Serial.print(" C, Humidity: ");
-        Serial.print(hum);
-        Serial.println(" %");
+        // Print sensor readings
+        Serial.printf("Temp: %.1fC, Hum: %.1f%%, CO2: %.0f, Moist: %.0f%%, pH: %.1f\n", 
+                      temp, hum, co2, moist, ph);
 
-        // Build current sensor JSON
+        // Update current sensor values (single PUT - fast)
         StaticJsonDocument<256> doc;
         doc["temperature"] = temp;
         doc["humidity"] = hum;
@@ -78,43 +76,54 @@ void loop()
         int code = FirebaseHTTP::put("sensors/current", payload);
         Serial.printf("PUT /sensors/current -> %d\n", code);
 
-        // Push histories (POST creates a new child key)
-        StaticJsonDocument<128> hist;
-        hist["timestamp"] = (unsigned long)(now + 1700000000000ULL);
-        hist["value"] = temp;
-        String htemp;
-        serializeJson(hist, htemp);
-        FirebaseHTTP::post("sensors/temperature/history", htemp);
+        // ===== Push history less frequently (every 60 seconds) =====
+        if (now - lastHistoryMs >= historyIntervalMs)
+        {
+            lastHistoryMs = now;
+            Serial.println("Posting history...");
+            
+            StaticJsonDocument<128> hist;
+            hist["timestamp"] = (unsigned long)(now + 1700000000000ULL);
+            
+            hist["value"] = temp;
+            String htemp; serializeJson(hist, htemp);
+            FirebaseHTTP::post("sensors/temperature/history", htemp);
 
-        hist["value"] = hum;
-        String hhum;
-        serializeJson(hist, hhum);
-        FirebaseHTTP::post("sensors/humidity/history", hhum);
-        hist["value"] = co2;
-        String hco2;
-        serializeJson(hist, hco2);
-        FirebaseHTTP::post("sensors/co2/history", hco2);
-        hist["value"] = moist;
-        String hmo;
-        serializeJson(hist, hmo);
-        FirebaseHTTP::post("sensors/moisture/history", hmo);
-        hist["value"] = ph;
-        String hph;
-        serializeJson(hist, hph);
-        FirebaseHTTP::post("sensors/ph/history", hph);
-
-        // Example: check robotArm status
+            hist["value"] = hum;
+            String hhum; serializeJson(hist, hhum);
+            FirebaseHTTP::post("sensors/humidity/history", hhum);
+            
+            hist["value"] = co2;
+            String hco2; serializeJson(hist, hco2);
+            FirebaseHTTP::post("sensors/co2/history", hco2);
+            
+            hist["value"] = moist;
+            String hmo; serializeJson(hist, hmo);
+            FirebaseHTTP::post("sensors/moisture/history", hmo);
+            
+            hist["value"] = ph;
+            String hph; serializeJson(hist, hph);
+            FirebaseHTTP::post("sensors/ph/history", hph);
+            
+            Serial.println("History posted.");
+        }
+    }
+    
+    // ===== Check controls less frequently (every 10 seconds) =====
+    if (now - lastControlCheckMs >= controlCheckIntervalMs)
+    {
+        lastControlCheckMs = now;
+        
+        // Check robotArm status
         String resp;
         int gcode = FirebaseHTTP::get("robotArm/status", &resp);
         if (gcode > 0 && resp.length() > 0)
         {
-            // resp may include quotes; remove them
             resp.trim();
             if (resp.indexOf("\"") == 0)
                 resp = resp.substring(1, resp.length() - 1);
             if (resp == "moving")
             {
-                // read targetPlot
                 String tResp;
                 if (FirebaseHTTP::get("robotArm/targetPlot", &tResp) > 0)
                 {
@@ -126,7 +135,7 @@ void loop()
             }
         }
 
-        // Example: check lightControl
+        // Check lightControl
         String lresp;
         if (FirebaseHTTP::get("lightControl/status", &lresp) > 0)
         {
