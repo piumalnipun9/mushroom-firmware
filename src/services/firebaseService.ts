@@ -5,8 +5,6 @@ import {
   CurrentSensorValues,
   MLModelInfo,
   RobotArmPosition,
-  Plot,
-  SensorControlCommand,
   LightControl,
   Alert
 } from '../types';
@@ -108,50 +106,28 @@ export const updateRobotStatus = async (status: 'idle' | 'moving' | 'operating')
   await set(statusRef, status);
 };
 
-// Plot Services
-export const subscribePlots = (callback: (data: Plot[]) => void) => {
-  const plotsRef = ref(database, 'plots');
-  return onValue(plotsRef, (snapshot: DataSnapshot) => {
-    const data = snapshot.val();
-    if (data) {
-      callback(Object.values(data));
-    } else {
-      callback([]);
-    }
+
+
+// Humidifier Control Services
+export type HumidifierMode = 'OFF' | 'SLOW' | 'FAST';
+
+export interface HumidifierControl {
+  mode: HumidifierMode;
+  lastUpdated: number;
+}
+
+export const subscribeHumidifierControl = (callback: (data: HumidifierControl | null) => void) => {
+  const humidifierRef = ref(database, 'humidifier');
+  return onValue(humidifierRef, (snapshot: DataSnapshot) => {
+    callback(snapshot.val());
   });
 };
 
-export const initializePlots = async (numberOfPlots: number) => {
-  const plotsRef = ref(database, 'plots');
-  const plots: Record<string, Plot> = {};
-  for (let i = 1; i <= numberOfPlots; i++) {
-    plots[`plot_${i}`] = {
-      id: i,
-      name: `Plot ${i}`,
-      status: 'active',
-      lastVisited: new Date().toISOString()
-    };
-  }
-  await set(plotsRef, plots);
-};
-
-// Sensor Control Commands
-export const sendSensorCommand = async (command: SensorControlCommand) => {
-  const commandsRef = ref(database, 'commands/sensors');
-  const newCommandRef = push(commandsRef);
-  await set(newCommandRef, {
-    ...command,
-    timestamp: Date.now()
-  });
-};
-
-export const triggerSensorReading = async (
-  sensorType: 'ph' | 'moisture' | 'co2' | 'humidity' | 'temperature'
-) => {
-  await sendSensorCommand({
-    sensorType,
-    action: 'read',
-    timestamp: Date.now()
+export const updateHumidifierMode = async (mode: HumidifierMode) => {
+  const humidifierRef = ref(database, 'humidifier');
+  await update(humidifierRef, {
+    mode,
+    lastUpdated: Date.now()
   });
 };
 
@@ -205,5 +181,15 @@ export const subscribeCameraUrl = (callback: (url: string | null) => void) => {
   return onValue(cameraRef, (snapshot: DataSnapshot) => {
     const url = snapshot.val();
     callback(url || null);
+  });
+};
+
+// Camera Base64 Frame Service — subscribes to camera/frame (raw base64 JPEG string)
+// The ESP32-CAM firmware pushes a new frame at frameUploadFps (default 2fps)
+export const subscribeCameraFrame = (callback: (frame: string | null) => void) => {
+  const frameRef = ref(database, 'camera/frame');
+  return onValue(frameRef, (snapshot: DataSnapshot) => {
+    const frame = snapshot.val();
+    callback(frame ? String(frame) : null);
   });
 };

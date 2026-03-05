@@ -4,136 +4,33 @@ import {
   Typography,
   Paper,
   Button,
-  CircularProgress,
   Slider,
   Switch,
   FormControlLabel,
   Divider,
   useTheme
 } from '@mui/material';
-import SensorsIcon from '@mui/icons-material/Sensors';
-import ThermostatIcon from '@mui/icons-material/Thermostat';
-import WaterDropIcon from '@mui/icons-material/WaterDrop';
-import Co2Icon from '@mui/icons-material/Co2';
-import OpacityIcon from '@mui/icons-material/Opacity';
-import ScienceIcon from '@mui/icons-material/Science';
 import LightModeIcon from '@mui/icons-material/LightMode';
+import WaterDropIcon from '@mui/icons-material/WaterDrop';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import BuildIcon from '@mui/icons-material/Build';
-import DownloadIcon from '@mui/icons-material/Download';
 import { 
-  triggerSensorReading, 
   updateLightControl, 
-  subscribeCurrentSensorValues,
-  subscribeLightControl 
+  subscribeLightControl,
+  subscribeHumidifierControl,
+  updateHumidifierMode,
+  HumidifierMode
 } from '../../services/firebaseService';
-import { CurrentSensorValues, LightControl } from '../../types';
+import { LightControl } from '../../types';
 
-interface SensorControlItemProps {
-  title: string;
-  icon: React.ReactNode;
-  color: string;
-  onRead: () => void;
-  onCalibrate: () => void;
-  isReading: boolean;
-  lastReading?: number;
-  unit: string;
-}
-
-const SensorControlItem: React.FC<SensorControlItemProps> = ({
-  title,
-  icon,
-  color,
-  onRead,
-  onCalibrate,
-  isReading,
-  lastReading,
-  unit
-}) => {
-  return (
-    <Paper elevation={2} sx={{ p: 2.5, borderRadius: 2 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-        <Box
-          sx={{
-            width: 48,
-            height: 48,
-            borderRadius: 2,
-            background: `${color}20`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center'
-          }}
-        >
-          {icon}
-        </Box>
-        <Box sx={{ flex: 1 }}>
-          <Typography variant="h6" color="text.primary" sx={{ fontWeight: 600 }}>
-            {title}
-          </Typography>
-          {lastReading !== undefined && (
-            <Typography variant="body2" color="text.secondary">
-              Last: {lastReading.toFixed(2)} {unit}
-            </Typography>
-          )}
-        </Box>
-      </Box>
-      
-      <Box sx={{ display: 'flex', gap: 1 }}>
-        <Button
-          variant="contained"
-          size="small"
-          startIcon={isReading ? <CircularProgress size={16} color="inherit" /> : <RefreshIcon />}
-          onClick={onRead}
-          disabled={isReading}
-          sx={{
-            flex: 1,
-            backgroundColor: color,
-            '&:hover': {
-              backgroundColor: color,
-              filter: 'brightness(0.9)'
-            }
-          }}
-        >
-          {isReading ? 'Reading...' : 'Read'}
-        </Button>
-        <Button
-          variant="outlined"
-          size="small"
-          startIcon={<BuildIcon />}
-          onClick={onCalibrate}
-          sx={{
-            borderColor: color,
-            color: color,
-            '&:hover': {
-              borderColor: color,
-              backgroundColor: `${color}10`
-            }
-          }}
-        >
-          Calibrate
-        </Button>
-      </Box>
-    </Paper>
-  );
-};
-
-const SensorControls: React.FC = () => {
+const HumidifierAndLightControl: React.FC = () => {
   const theme = useTheme();
-  const [readingStates, setReadingStates] = useState<Record<string, boolean>>({});
   const [lightIntensity, setLightIntensity] = useState<number>(75);
   const [isAutoLight, setIsAutoLight] = useState<boolean>(true);
   const [lightStatus, setLightStatus] = useState<boolean>(true);
-  const [currentValues, setCurrentValues] = useState<CurrentSensorValues>({
-    ph: 0,
-    moisture: 0,
-    co2: 0,
-    humidity: 0,
-    temperature: 0
-  });
+  const [humidifierMode, setHumidifierMode] = useState<HumidifierMode>('OFF');
 
-  // Subscribe to Firebase data
+  // Subscribe to Firebase light control data
   useEffect(() => {
-    const unsubscribeSensors = subscribeCurrentSensorValues(setCurrentValues);
     const unsubscribeLight = subscribeLightControl((data: LightControl | null) => {
       if (data) {
         setLightIntensity(data.intensity);
@@ -143,25 +40,22 @@ const SensorControls: React.FC = () => {
     });
 
     return () => {
-      unsubscribeSensors();
       unsubscribeLight();
     };
   }, []);
 
-  const handleSensorRead = async (sensorType: 'ph' | 'moisture' | 'co2' | 'humidity' | 'temperature') => {
-    setReadingStates(prev => ({ ...prev, [sensorType]: true }));
-    await triggerSensorReading(sensorType);
-    
-    // Simulate reading time
-    setTimeout(() => {
-      setReadingStates(prev => ({ ...prev, [sensorType]: false }));
-    }, 2000);
-  };
+  // Subscribe to Firebase humidifier control data
+  useEffect(() => {
+    const unsubscribeHumidifier = subscribeHumidifierControl((data) => {
+      if (data && data.mode) {
+        setHumidifierMode(data.mode);
+      }
+    });
 
-  const handleCalibrate = (sensorType: string) => {
-    console.log(`Calibrating ${sensorType} sensor`);
-    // Implement calibration logic
-  };
+    return () => {
+      unsubscribeHumidifier();
+    };
+  }, []);
 
   const handleLightIntensityChange = async (_: Event, value: number | number[]) => {
     const intensity = value as number;
@@ -179,96 +73,53 @@ const SensorControls: React.FC = () => {
     await updateLightControl({ status: event.target.checked ? 'on' : 'off' });
   };
 
-  const sensors = [
-    {
-      type: 'temperature' as const,
-      title: 'Temperature',
-      icon: <ThermostatIcon sx={{ color: '#ff6b6b', fontSize: 28 }} />,
-      color: '#ff6b6b',
-      unit: '°C',
-      lastReading: currentValues.temperature
-    },
-    {
-      type: 'humidity' as const,
-      title: 'Humidity',
-      icon: <OpacityIcon sx={{ color: '#4ecdc4', fontSize: 28 }} />,
-      color: '#4ecdc4',
-      unit: '%',
-      lastReading: currentValues.humidity
-    },
-    {
-      type: 'co2' as const,
-      title: 'CO2 Level',
-      icon: <Co2Icon sx={{ color: '#a78bfa', fontSize: 28 }} />,
-      color: '#a78bfa',
-      unit: 'ppm',
-      lastReading: currentValues.co2
-    },
-    {
-      type: 'moisture' as const,
-      title: 'Moisture',
-      icon: <WaterDropIcon sx={{ color: '#60a5fa', fontSize: 28 }} />,
-      color: '#60a5fa',
-      unit: '%',
-      lastReading: currentValues.moisture
-    },
-    {
-      type: 'ph' as const,
-      title: 'pH Level',
-      icon: <ScienceIcon sx={{ color: '#fbbf24', fontSize: 28 }} />,
-      color: '#fbbf24',
-      unit: 'pH',
-      lastReading: currentValues.ph
+  const getHumidifierColor = () => {
+    switch (humidifierMode) {
+      case 'FAST':
+        return '#ef4444';
+      case 'SLOW':
+        return '#f59e0b';
+      case 'OFF':
+      default:
+        return '#9ca3af';
     }
-  ];
+  };
+
+  const cycleHumidifierMode = async () => {
+    const modes: HumidifierMode[] = ['OFF', 'SLOW', 'FAST'];
+    const currentIndex = modes.indexOf(humidifierMode);
+    const nextMode = modes[(currentIndex + 1) % modes.length];
+    setHumidifierMode(nextMode);
+    await updateHumidifierMode(nextMode);
+    console.log(`Humidifier mode updated to: ${nextMode}`);
+  };
 
   return (
     <Box>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
-        <SensorsIcon sx={{ fontSize: 40, color: '#4ecdc4' }} />
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <LightModeIcon sx={{ fontSize: 40, color: '#fbbf24' }} />
+          <WaterDropIcon sx={{ fontSize: 40, color: '#4ecdc4' }} />
+        </Box>
         <Typography 
           variant="h4" 
           color="text.primary"
           sx={{ fontWeight: 700 }}
         >
-          Sensor Controls
+          Humidifier & Light Control
         </Typography>
       </Box>
 
-      {/* Sensor Grid */}
-      <Box 
-        sx={{ 
-          display: 'grid', 
-          gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', lg: 'repeat(3, 1fr)' },
-          gap: 2,
-          mb: 4
-        }}
-      >
-        {sensors.map((sensor) => (
-          <SensorControlItem
-            key={sensor.type}
-            title={sensor.title}
-            icon={sensor.icon}
-            color={sensor.color}
-            onRead={() => handleSensorRead(sensor.type)}
-            onCalibrate={() => handleCalibrate(sensor.type)}
-            isReading={readingStates[sensor.type] || false}
-            lastReading={sensor.lastReading}
-            unit={sensor.unit}
-          />
-        ))}
-      </Box>
-
       {/* Light Control */}
-      <Paper elevation={2} sx={{ p: 3, borderRadius: 2 }}>
+      <Paper elevation={2} sx={{ p: 3, borderRadius: 2, mb: 3 }}>
         <Typography variant="h6" color="text.primary" sx={{ fontWeight: 600, mb: 3, display: 'flex', alignItems: 'center', gap: 1 }}>
           <LightModeIcon sx={{ color: '#fbbf24' }} />
-          Light Control Unit
+          Light Control
         </Typography>
 
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' }, gap: 3 }}>
           <Box>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontWeight: 600 }}>
               Light Intensity: {lightIntensity}%
             </Typography>
             <Slider
@@ -277,20 +128,28 @@ const SensorControls: React.FC = () => {
               disabled={isAutoLight}
               min={0}
               max={100}
+              marks={[
+                { value: 0, label: '0%' },
+                { value: 50, label: '50%' },
+                { value: 100, label: '100%' }
+              ]}
+              valueLabelDisplay="auto"
               sx={{
                 color: '#fbbf24',
                 '& .MuiSlider-thumb': {
-                  backgroundColor: '#fbbf24'
+                  backgroundColor: '#fbbf24',
+                  '&:hover': {
+                    boxShadow: '0 0 0 8px rgba(251, 191, 36, 0.16)'
+                  }
                 },
                 '& .MuiSlider-track': {
                   backgroundColor: '#fbbf24'
+                },
+                '& .MuiSlider-rail': {
+                  backgroundColor: '#e5e7eb'
                 }
               }}
             />
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
-              <Typography variant="caption" color="text.secondary">0%</Typography>
-              <Typography variant="caption" color="text.secondary">100%</Typography>
-            </Box>
           </Box>
 
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -303,8 +162,8 @@ const SensorControls: React.FC = () => {
                 />
               }
               label={
-                <Typography color="text.secondary">
-                  Light Status: {lightStatus ? 'ON' : 'OFF'}
+                <Typography color="text.secondary" sx={{ fontWeight: 500 }}>
+                  Status: {lightStatus ? 'ON' : 'OFF'}
                 </Typography>
               }
             />
@@ -318,8 +177,8 @@ const SensorControls: React.FC = () => {
                 />
               }
               label={
-                <Typography color="text.secondary">
-                  Auto Mode (ML Controlled - 75%)
+                <Typography color="text.secondary" sx={{ fontWeight: 500 }}>
+                  Auto Mode (ML Controlled)
                 </Typography>
               }
             />
@@ -340,48 +199,81 @@ const SensorControls: React.FC = () => {
           />
           <Typography variant="body2" color="text.secondary">
             {isAutoLight 
-              ? 'Light is controlled by ML model predictions for optimal fruiting conditions'
-              : 'Manual control mode - adjust intensity using the slider above'
+              ? 'Auto mode enabled - ML model controls light based on fruiting conditions'
+              : 'Manual mode - adjust intensity using the slider above'
             }
           </Typography>
         </Box>
       </Paper>
 
-      {/* Quick Actions */}
-      <Paper elevation={2} sx={{ p: 3, mt: 3, borderRadius: 2 }}>
-        <Typography variant="h6" color="text.primary" sx={{ fontWeight: 600, mb: 3 }}>
-          Quick Actions
+      {/* Humidifier Control */}
+      <Paper elevation={2} sx={{ p: 3, borderRadius: 2 }}>
+        <Typography variant="h6" color="text.primary" sx={{ fontWeight: 600, mb: 3, display: 'flex', alignItems: 'center', gap: 1 }}>
+          <WaterDropIcon sx={{ color: '#4ecdc4' }} />
+          Humidifier Control
         </Typography>
 
-        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-          <Button
-            variant="contained"
-            startIcon={<RefreshIcon />}
-            onClick={() => {
-              sensors.forEach(s => handleSensorRead(s.type));
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, mb: 3 }}>
+          <Box
+            sx={{
+              width: 80,
+              height: 80,
+              borderRadius: '50%',
+              backgroundColor: `${getHumidifierColor()}20`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: `3px solid ${getHumidifierColor()}`,
+              boxShadow: `0 0 20px ${getHumidifierColor()}40`,
+              transition: 'all 0.3s ease'
             }}
-            color="success"
           >
-            Read All Sensors
-          </Button>
-          <Button
-            variant="outlined"
-            startIcon={<BuildIcon />}
-            color="warning"
-          >
-            Calibrate All
-          </Button>
-          <Button
-            variant="outlined"
-            startIcon={<DownloadIcon />}
-            color="info"
-          >
-            Export Data
-          </Button>
+            <Typography 
+              variant="h5" 
+              sx={{ 
+                fontWeight: 700, 
+                color: getHumidifierColor(),
+                textAlign: 'center'
+              }}
+            >
+              {humidifierMode}
+            </Typography>
+          </Box>
+
+          <Box sx={{ flex: 1 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Current Mode: <strong>{humidifierMode}</strong>
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+              Cycles: OFF → SLOW → FAST → OFF
+            </Typography>
+            <Button
+              variant="contained"
+              startIcon={<RefreshIcon />}
+              onClick={cycleHumidifierMode}
+              sx={{
+                backgroundColor: getHumidifierColor(),
+                '&:hover': {
+                  backgroundColor: getHumidifierColor(),
+                  filter: 'brightness(0.9)'
+                }
+              }}
+            >
+              Cycle Mode
+            </Button>
+          </Box>
+        </Box>
+
+        <Divider sx={{ my: 3 }} />
+
+        <Box>
+          <Typography variant="body2" color="text.secondary">
+            <strong>How it works:</strong> The humidifier cycles through three states - OFF (no moisture), SLOW (gentle misting), and FAST (aggressive misting). Press "Cycle Mode" to advance to the next state, or trigger GPIO15 with a falling edge pulse to cycle automatically.
+          </Typography>
         </Box>
       </Paper>
     </Box>
   );
 };
 
-export default SensorControls;
+export default HumidifierAndLightControl;

@@ -7,7 +7,7 @@ import SensorChart from './SensorChart';
 import SensorCard from './SensorCard';
 import VideoFeed from './VideoFeed';
 import { SensorData, CurrentSensorValues } from '../../types';
-import { subscribeSensorData, subscribeCurrentSensorValues, subscribeCameraUrl } from '../../services/firebaseService';
+import { subscribeSensorData, subscribeCurrentSensorValues, subscribeCameraUrl, subscribeCameraFrame } from '../../services/firebaseService';
 import { initializeFirebaseData } from '../../config/initFirebaseData';
 
 const Dashboard: React.FC = () => {
@@ -24,6 +24,7 @@ const Dashboard: React.FC = () => {
     temperature: 0
   });
   const [cameraUrl, setCameraUrl] = useState<string | null>(null);
+  const [cameraFrame, setCameraFrame] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [dataInitialized, setDataInitialized] = useState(false);
 
@@ -44,10 +45,12 @@ const Dashboard: React.FC = () => {
       }
     });
 
-    // Subscribe to camera URL from Firebase
+    // Subscribe to camera URL (MJPEG fallback) and Base64 frame from Firebase
     const unsubscribeCamera = subscribeCameraUrl((url) => {
       setCameraUrl(url);
-      console.log('[Dashboard] Camera URL from Firebase:', url);
+    });
+    const unsubscribeCameraFrame = subscribeCameraFrame((frame) => {
+      setCameraFrame(frame);
     });
 
     // Set loading to false after a timeout if no data
@@ -63,6 +66,7 @@ const Dashboard: React.FC = () => {
       unsubscribeTemperature();
       unsubscribeCurrent();
       unsubscribeCamera();
+      unsubscribeCameraFrame();
       clearTimeout(timeout);
     };
   }, []);
@@ -133,7 +137,7 @@ const Dashboard: React.FC = () => {
           mb: 4
         }}
       >
-        <VideoFeed streamUrl={cameraUrl || undefined} />
+        <VideoFeed base64Frame={cameraFrame || undefined} streamUrl={cameraUrl || undefined} />
 
         {/* Quick Stats Summary */}
         <Paper

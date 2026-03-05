@@ -17,6 +17,10 @@
   const int servoPin4 = 22;
 
   int currentPositions[4] = {500, 1400, 600, 2000};
+  //500-0
+  //1500-90
+  //3000-180
+
 
   const int duration = 200;
   const int updateInterval = 1;

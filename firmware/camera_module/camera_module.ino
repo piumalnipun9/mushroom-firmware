@@ -17,14 +17,16 @@
   Notes: this sketch is meant to be uploaded to the dedicated camera ESP32 module.
 */
 
+#include <Arduino.h>
 #include <WiFi.h>
 #include "esp_camera.h"
 #include <WebServer.h>
 #include <HTTPClient.h>
 #include "esp_http_server.h"
+#include <ArduinoJson.h>
 
 // WiFi credentials
-const char *WIFI_SSID = "Pixel_9483";
+const char *WIFI_SSID = "Pixel 6a";
 const char *WIFI_PASSWORD = "12345678";
 
 // Firebase configuration
@@ -50,11 +52,33 @@ const char *FIREBASE_SECRET = "ZT0lSGdPU92LVTESOaXzYd3LOFgWKyVGf3Hm1zXH";
 #define HREF_GPIO_NUM 23
 #define PCLK_GPIO_NUM 22
 
+// On-board flash LED (AI-Thinker module)
+#define CAM_LED_PIN 4
+#define CAM_LED_CHANNEL 7
+#define CAM_LED_FREQ 5000
+#define CAM_LED_RESOLUTION 8
+
 WebServer server(80);
 httpd_handle_t stream_httpd = NULL;
 
 // Track last published IP to detect changes
 String lastPublishedIP = "";
+unsigned long lastFrameUploadMs = 0;
+float frameUploadFps = 2.0f; // Change to control Base64 update rate (frames per second)
+unsigned long lastLightPollMs = 0;
+const unsigned long lightPollIntervalMs = 1000; // ms between DB polls for light control
+uint8_t lastLedDuty = 0;
+
+unsigned long getFrameUploadIntervalMs()
+{
+    float fps = frameUploadFps;
+    if (fps < 0.1f)
+    {
+        fps = 0.1f;
+    }
+    unsigned long interval = (unsigned long)(1000.0f / fps);
+    return interval == 0 ? 1 : interval;
+}
 
 // ============================================
 // Firebase HTTP Helper Functions
@@ -76,7 +100,7 @@ int firebasePut(const String &path, const String &jsonPayload)
     http.begin(url);
     http.addHeader("Content-Type", "application/json");
     int code = http.PUT(jsonPayload);
-    
+
     if (code > 0)
     {
         Serial.printf("[Firebase] PUT %s -> HTTP %d\n", path.c_str(), code);
@@ -85,9 +109,163 @@ int firebasePut(const String &path, const String &jsonPayload)
     {
         Serial.printf("[Firebase] PUT %s -> FAILED (error: %d)\n", path.c_str(), code);
     }
-    
+
     http.end();
     return code;
+}
+
+int firebaseGet(const String &path, String *response)
+{
+    if (WiFi.status() != WL_CONNECTED)
+        return -1;
+
+    HTTPClient http;
+    String url = String(FIREBASE_HOST);
+    if (!url.endsWith("/"))
+        url += "/";
+    url += path;
+    if (!url.endsWith(".json"))
+        url += ".json";
+    url += "?auth=" + String(FIREBASE_SECRET);
+
+    http.begin(url);
+    int code = http.GET();
+    if (code > 0 && response != nullptr)
+    {
+        *response = http.getString();
+    }
+    else if (code <= 0)
+    {
+        Serial.printf("[Firebase] GET %s -> FAILED (error: %d)\n", path.c_str(), code);
+    }
+    http.end();
+    return code;
+}
+static const char base64Alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+String base64Encode(const uint8_t *data, size_t length)
+{
+    if (!data || !length)
+        return "";
+
+    String encoded;
+    encoded.reserve(((length + 2) / 3) * 4);
+
+    for (size_t i = 0; i < length; i += 3)
+    {
+        uint32_t octet_a = data[i];
+        uint32_t octet_b = (i + 1 < length) ? data[i + 1] : 0;
+        uint32_t octet_c = (i + 2 < length) ? data[i + 2] : 0;
+        uint32_t triple = (octet_a << 16) | (octet_b << 8) | octet_c;
+
+        encoded += base64Alphabet[(triple >> 18) & 0x3F];
+        encoded += base64Alphabet[(triple >> 12) & 0x3F];
+        encoded += (i + 1 < length) ? base64Alphabet[(triple >> 6) & 0x3F] : '=';
+        encoded += (i + 2 < length) ? base64Alphabet[triple & 0x3F] : '=';
+    }
+    return encoded;
+}
+
+void setCameraLedDuty(uint8_t duty)
+{
+    if (duty > ((1 << CAM_LED_RESOLUTION) - 1))
+        duty = (1 << CAM_LED_RESOLUTION) - 1;
+    if (duty == lastLedDuty)
+        return;
+    lastLedDuty = duty;
+    ledcWrite(CAM_LED_PIN, duty);
+}
+
+void setCameraLedPercent(int percent)
+{
+    if (percent < 0)
+        percent = 0;
+    if (percent > 100)
+        percent = 100;
+    uint8_t duty = (uint8_t)((percent * ((1 << CAM_LED_RESOLUTION) - 1)) / 100);
+    setCameraLedDuty(duty);
+}
+
+void applyLightControlJson(const String &json)
+{
+    DynamicJsonDocument doc(256);
+    DeserializationError err = deserializeJson(doc, json);
+    if (err)
+    {
+        Serial.println("[Camera] Failed to parse lightControl JSON");
+        return;
+    }
+
+    String status = doc["status"].as<String>();
+    int intensity = doc["intensity"].isNull() ? 0 : doc["intensity"].as<int>();
+
+    if (!status.equalsIgnoreCase("on"))
+    {
+        intensity = 0;
+    }
+
+    setCameraLedPercent(intensity);
+}
+
+void pollLightControl()
+{
+    unsigned long now = millis();
+    if (now - lastLightPollMs < lightPollIntervalMs)
+        return;
+    if (WiFi.status() != WL_CONNECTED)
+        return;
+
+    lastLightPollMs = now;
+
+    String resp;
+    int code = firebaseGet("lightControl", &resp);
+    if (code == 200 && resp.length() > 0)
+    {
+        applyLightControlJson(resp);
+    }
+    else if (code > 0)
+    {
+        Serial.printf("[Camera] lightControl GET failed: %d\n", code);
+    }
+}
+
+void maybeUploadFrameToRealtimeDB()
+{
+    unsigned long intervalMs = getFrameUploadIntervalMs();
+    if (millis() - lastFrameUploadMs < intervalMs)
+        return;
+    lastFrameUploadMs = millis();
+
+    if (WiFi.status() != WL_CONNECTED)
+        return;
+
+    camera_fb_t *fb = esp_camera_fb_get();
+    if (!fb)
+    {
+        Serial.println("[Camera] Frame grab failed");
+        return;
+    }
+
+    size_t rawLen = fb->len;
+    String encoded = base64Encode(fb->buf, fb->len);
+    esp_camera_fb_return(fb);
+
+    if (!encoded.length())
+    {
+        Serial.println("[Camera] Base64 encoding failed");
+        return;
+    }
+
+    String payload = "\"" + encoded + "\"";
+    int code = firebasePut("camera/frame", payload);
+    if (code == 200)
+    {
+        Serial.printf("[Camera] Uploaded Base64 frame (%u bytes raw)\n", (unsigned)rawLen);
+    }
+    else
+    {
+        Serial.printf("[Camera] Base64 frame upload failed: %d\n", code);
+    }
 }
 
 // ============================================
@@ -101,7 +279,7 @@ void publishCameraUrlToFirebase()
     }
 
     String currentIP = WiFi.localIP().toString();
-    
+
     // Only publish if IP changed
     if (currentIP == lastPublishedIP || currentIP == "0.0.0.0")
     {
@@ -109,20 +287,20 @@ void publishCameraUrlToFirebase()
     }
 
     lastPublishedIP = currentIP;
-    
+
     // Build stream URL - stream runs on port 81
     String streamUrl = "http://" + currentIP + ":81/stream";
-    
+
     // Firebase expects JSON string value with quotes
     String payload = "\"" + streamUrl + "\"";
-    
+
     Serial.println("===========================================");
     Serial.println("[Camera] IP changed, updating Firebase...");
     Serial.print("[Camera] New Stream URL: ");
     Serial.println(streamUrl);
-    
+
     int code = firebasePut("camera/cameraUrl", payload);
-    
+
     if (code == 200)
     {
         Serial.println("[Camera] Firebase updated successfully!");
@@ -276,14 +454,14 @@ void setup()
     // Init with specs based on PSRAM availability
     if (psramFound())
     {
-        config.frame_size = FRAMESIZE_VGA;  // 640x480 for smooth streaming
+        config.frame_size = FRAMESIZE_VGA; // 640x480 for smooth streaming
         config.jpeg_quality = 12;
         config.fb_count = 2;
         Serial.println("[Camera] PSRAM found - using VGA resolution");
     }
     else
     {
-        config.frame_size = FRAMESIZE_QVGA;  // 320x240 for low memory
+        config.frame_size = FRAMESIZE_QVGA; // 320x240 for low memory
         config.jpeg_quality = 15;
         config.fb_count = 1;
         Serial.println("[Camera] No PSRAM - using QVGA resolution");
@@ -298,6 +476,10 @@ void setup()
     }
     Serial.println("[Camera] Camera initialized successfully");
 
+    // Configure on-board LED PWM (default off)
+    ledcAttach(CAM_LED_PIN, CAM_LED_FREQ, CAM_LED_RESOLUTION);
+    setCameraLedDuty(0);
+
     // Connect to WiFi
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     Serial.printf("[WiFi] Connecting to %s", WIFI_SSID);
@@ -308,7 +490,7 @@ void setup()
         Serial.print('.');
     }
     Serial.println();
-    
+
     if (WiFi.status() == WL_CONNECTED)
     {
         Serial.print("[WiFi] Connected! IP: ");
@@ -343,10 +525,15 @@ void loop()
 {
     // Handle web server requests
     server.handleClient();
-    
+
     // Check if IP changed and update Firebase
     publishCameraUrlToFirebase();
-    
+
+    // Periodically push Base64 frame to Realtime DB
+    maybeUploadFrameToRealtimeDB();
+
+    // Poll lightControl node to drive camera LED based on database state
+    pollLightControl();
+
     delay(10);
 }
-

@@ -19,21 +19,31 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import HomeIcon from '@mui/icons-material/Home';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import { RobotArmPosition, Plot } from '../../types';
+import { RobotArmPosition } from '../../types';
 import { 
   subscribeRobotArmPosition, 
-  subscribePlots, 
   moveRobotToPlot, 
   updateRobotStatus
 } from '../../services/firebaseService';
 
+interface Plot {
+  id: number;
+  name: string;
+  status: 'active' | 'inactive';
+}
+
 const RobotArmControl: React.FC = () => {
   const [robotPosition, setRobotPosition] = useState<RobotArmPosition>({
-    currentPlot: 1,
+    currentPlot: 0,
     status: 'idle',
     lastAction: 'Waiting for data...'
   });
-  const [plots, setPlots] = useState<Plot[]>([]);
+  const [plots] = useState<Plot[]>([
+    { id: 1, name: 'Plot 1', status: 'active' },
+    { id: 2, name: 'Plot 2', status: 'active' },
+    { id: 3, name: 'Plot 3', status: 'active' },
+    { id: 4, name: 'Plot 4', status: 'active' },
+  ]);
   const [selectedPlot, setSelectedPlot] = useState<number>(1);
   const [isMoving, setIsMoving] = useState(false);
 
@@ -49,25 +59,8 @@ const RobotArmControl: React.FC = () => {
       }
     });
 
-    const unsubscribePlots = subscribePlots((data) => {
-      if (data && data.length > 0) {
-        setPlots(data);
-      } else {
-        // Default plots if none in Firebase
-        setPlots([
-          { id: 1, name: 'Plot 1', status: 'active', lastVisited: new Date().toISOString() },
-          { id: 2, name: 'Plot 2', status: 'active', lastVisited: new Date().toISOString() },
-          { id: 3, name: 'Plot 3', status: 'active', lastVisited: new Date().toISOString() },
-          { id: 4, name: 'Plot 4', status: 'active', lastVisited: new Date().toISOString() },
-          { id: 5, name: 'Plot 5', status: 'inactive', lastVisited: new Date().toISOString() },
-          { id: 6, name: 'Plot 6', status: 'active', lastVisited: new Date().toISOString() },
-        ]);
-      }
-    });
-
     return () => {
       unsubscribeRobot();
-      unsubscribePlots();
     };
   }, []);
 
@@ -76,19 +69,8 @@ const RobotArmControl: React.FC = () => {
   };
 
   const handleMoveToPlot = async () => {
-    setIsMoving(true);
     await moveRobotToPlot(selectedPlot);
-    
-    // Simulate movement time
-    setTimeout(() => {
-      setRobotPosition(prev => ({
-        ...prev,
-        currentPlot: selectedPlot,
-        status: 'idle',
-        lastAction: `Arrived at Plot ${selectedPlot}`
-      }));
-      setIsMoving(false);
-    }, 3000);
+    // Firebase subscription drives robotPosition & isMoving automatically
   };
 
   const handleEmergencyStop = async () => {
@@ -102,18 +84,8 @@ const RobotArmControl: React.FC = () => {
   };
 
   const handleReturnHome = async () => {
-    setIsMoving(true);
     await moveRobotToPlot(1);
-    
-    setTimeout(() => {
-      setRobotPosition(prev => ({
-        ...prev,
-        currentPlot: 1,
-        status: 'idle',
-        lastAction: 'Returned to home position'
-      }));
-      setIsMoving(false);
-    }, 2000);
+    // Firebase subscription drives robotPosition & isMoving automatically
   };
 
   const getStatusColor = (status: string) => {
@@ -167,14 +139,15 @@ const RobotArmControl: React.FC = () => {
                   position: 'relative'
                 }}
               >
-                <LocationOnIcon sx={{ color: 'primary.main', fontSize: 32, position: 'absolute' }} />
+                <LocationOnIcon sx={{ color: 'primary.main', fontSize: 32, position: 'absolute', display: robotPosition.currentPlot === 0 ? 'none' : 'block' }} />
+                <HomeIcon sx={{ color: 'primary.main', fontSize: 32, position: 'absolute', display: robotPosition.currentPlot === 0 ? 'block' : 'none' }} />
               </Box>
               <Box>
                 <Typography variant="body2" color="text.secondary">
                   Current Position
                 </Typography>
                 <Typography variant="h5" color="text.primary" sx={{ fontWeight: 600 }}>
-                  Plot {robotPosition.currentPlot}
+                  {robotPosition.currentPlot === 0 ? 'Home' : `Plot ${robotPosition.currentPlot}`}
                 </Typography>
               </Box>
             </Box>
@@ -302,7 +275,7 @@ const RobotArmControl: React.FC = () => {
           <Box 
             sx={{ 
               display: 'grid', 
-              gridTemplateColumns: 'repeat(3, 1fr)',
+              gridTemplateColumns: 'repeat(2, 1fr)',
               gap: 2
             }}
           >
@@ -359,7 +332,7 @@ const RobotArmControl: React.FC = () => {
                     color: robotPosition.currentPlot === plot.id || selectedPlot === plot.id ? 'rgba(255,255,255,0.8)' : 'text.secondary'
                   }}
                 >
-                  {plot.status === 'inactive' ? 'Inactive' : `Last visited: ${new Date(plot.lastVisited).toLocaleTimeString()}`}
+                  {plot.status === 'inactive' ? 'Inactive' : 'Active'}
                 </Typography>
               </Paper>
             ))}

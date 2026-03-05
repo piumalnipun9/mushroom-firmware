@@ -40,19 +40,6 @@ export interface RobotArmPosition {
   lastAction: string;
 }
 
-export interface Plot {
-  id: number;
-  name: string;
-  status: 'active' | 'inactive';
-  lastVisited: string;
-}
-
-export interface SensorControlCommand {
-  sensorType: 'ph' | 'moisture' | 'co2' | 'humidity' | 'temperature';
-  action: 'read' | 'calibrate';
-  timestamp: number;
-}
-
 export interface LightControl {
   intensity: number;
   isAuto: boolean;

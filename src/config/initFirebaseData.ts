@@ -60,16 +60,6 @@ export const initializeFirebaseData = async () => {
     commandTimestamp: now
   });
 
-  // Initialize Plots
-  await set(ref(database, 'plots'), {
-    plot_1: { id: 1, name: 'Plot 1', status: 'active', lastVisited: new Date().toISOString() },
-    plot_2: { id: 2, name: 'Plot 2', status: 'active', lastVisited: new Date().toISOString() },
-    plot_3: { id: 3, name: 'Plot 3', status: 'active', lastVisited: new Date().toISOString() },
-    plot_4: { id: 4, name: 'Plot 4', status: 'active', lastVisited: new Date().toISOString() },
-    plot_5: { id: 5, name: 'Plot 5', status: 'inactive', lastVisited: new Date().toISOString() },
-    plot_6: { id: 6, name: 'Plot 6', status: 'active', lastVisited: new Date().toISOString() }
-  });
-
   // Initialize Light Control
   await set(ref(database, 'lightControl'), {
     intensity: 75,
@@ -96,15 +86,6 @@ export const initializeFirebaseData = async () => {
       message: 'Optimal humidity maintained for 24 hours',
       timestamp: now - 900000,
       acknowledged: false
-    }
-  });
-
-  // Initialize sensor commands (for ESP32 to read)
-  await set(ref(database, 'commands'), {
-    sensors: {},
-    robotArm: {
-      lastCommand: 'none',
-      timestamp: now
     }
   });
 

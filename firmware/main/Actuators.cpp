@@ -1,42 +1,62 @@
 
-// Simplified Actuators implementation using analogWrite for PWM
+// Humidifier state machine implementation
 #include "Actuators.h"
 #include "Config.h"
 #include <Arduino.h>
 
 namespace Actuators
 {
+    // Current humidifier mode state
+    static HumidifierMode currentMode = MODE_OFF;
+
+    // ISR for detecting falling edge on humidifier pin
+    static void IRAM_ATTR humidifierISR()
+    {
+        // Cycle through modes: OFF -> SLOW -> FAST -> OFF
+        currentMode = (HumidifierMode)((currentMode + 1) % 3);
+        Serial.printf("[Actuators] Humidifier mode changed to: ");
+        switch (currentMode)
+        {
+        case MODE_OFF:
+            Serial.println("OFF");
+            break;
+        case MODE_SLOW:
+            Serial.println("SLOW");
+            break;
+        case MODE_FAST:
+            Serial.println("FAST");
+            break;
+        }
+    }
 
     void begin()
     {
-        // Use simple analogWrite-based PWM. Ensure pin is output.
-        pinMode(PIN_LIGHT, OUTPUT);
-        setLightIntensity(0);
-        Serial.printf("Actuators: PWM (analogWrite) on pin %d\n", PIN_LIGHT);
+        // Configure humidifier pin for input with internal pull-up
+        // Detect falling edges (LOW transitions)
+        pinMode(PIN_HUMIDIFIER, INPUT_PULLUP);
+        attachInterrupt(digitalPinToInterrupt(PIN_HUMIDIFIER), humidifierISR, FALLING);
+
+        currentMode = MODE_OFF;
+        Serial.printf("[Actuators] Humidifier initialized on pin %d (state machine)\n", PIN_HUMIDIFIER);
     }
 
-    void setLightIntensity(int percent)
+    HumidifierMode getHumidifierMode()
     {
-        if (percent < 0)
-            percent = 0;
-        if (percent > 100)
-            percent = 100;
-
-        // Map percent to 0-255 duty for analogWrite
-        int duty = map(percent, 0, 100, 0, 255);
-        analogWrite(PIN_LIGHT, duty);
-        Serial.printf("Actuator: set light intensity to %d%% (duty=%d)\n", percent, duty);
+        return currentMode;
     }
 
-    void setHumidifier(bool on)
+    void setHumidifierMode(HumidifierMode mode)
     {
-        // Keep minimal stub for compatibility
-        Serial.printf("Actuator: humidifier %s\n", on ? "ON" : "OFF");
+        if (mode >= 0 && mode < 3)
+        {
+            currentMode = mode;
+            Serial.printf("[Actuators] Humidifier mode set to: %d\n", mode);
+        }
     }
 
     void setExhaustFan(bool on)
     {
-        Serial.printf("Actuator: exhaust fan %s\n", on ? "ON" : "OFF");
+        Serial.printf("[Actuators] Exhaust fan %s\n", on ? "ON" : "OFF");
     }
 
 } // namespace Actuators
