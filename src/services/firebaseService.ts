@@ -1,11 +1,11 @@
 import { ref, onValue, set, push, update } from 'firebase/database';
 import { database } from '../config/firebase';
-import { 
-  SensorData, 
-  CurrentSensorValues, 
-  MLModelInfo, 
-  RobotArmPosition, 
-  Plot, 
+import {
+  SensorData,
+  CurrentSensorValues,
+  MLModelInfo,
+  RobotArmPosition,
+  Plot,
   SensorControlCommand,
   LightControl,
   Alert
@@ -61,6 +61,17 @@ export const writeSensorReading = async (
 
   const currentRef = ref(database, `sensors/current/${sensorType}`);
   await set(currentRef, value);
+};
+
+// Camera Frame Service
+export const subscribeCameraFrame = (
+  callback: (data: string) => void
+) => {
+  const cameraRef = ref(database, 'camera/frame');
+  return onValue(cameraRef, (snapshot) => {
+    const data = snapshot.val();
+    callback(data || '');
+  });
 };
 
 // ML Model Services
@@ -174,19 +185,33 @@ export const subscribeAlerts = (callback: (data: Alert[]) => void) => {
   return onValue(alertsRef, (snapshot) => {
     const data = snapshot.val();
     if (data) {
-      callback(Object.entries(data).map(([id, alert]) => ({
-        ...(alert as Alert),
-        id
-      })));
+      callback(Object.entries(data)
+        .filter(([id]) => id !== 'latest')
+        .map(([id, alert]) => ({
+          ...(alert as Alert),
+          id
+        })));
     } else {
       callback([]);
     }
   });
 };
 
+export const subscribeLatestSystemStatus = (callback: (data: { status: string, time: string } | null) => void) => {
+  const latestRef = ref(database, 'alerts/latest');
+  return onValue(latestRef, (snapshot) => {
+    callback(snapshot.val());
+  });
+};
+
 export const acknowledgeAlert = async (alertId: string) => {
   const alertRef = ref(database, `alerts/${alertId}/acknowledged`);
   await set(alertRef, true);
+};
+
+export const markFalseAlarm = async (alertId: string) => {
+  const falseAlarmRef = ref(database, `alerts/${alertId}/false_alarm`);
+  await set(falseAlarmRef, true);
 };
 
 export const createAlert = async (alert: Omit<Alert, 'id' | 'timestamp' | 'acknowledged'>) => {

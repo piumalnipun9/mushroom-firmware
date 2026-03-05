@@ -35,10 +35,10 @@ const MLModelInfoComponent: React.FC = () => {
       }
       setLoading(false);
     });
-    
+
     // Set loading to false after timeout if no data
     const timeout = setTimeout(() => setLoading(false), 3000);
-    
+
     return () => {
       unsubscribe();
       clearTimeout(timeout);
@@ -86,8 +86,8 @@ const MLModelInfoComponent: React.FC = () => {
     <Box>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
         <SmartToyIcon sx={{ fontSize: 40, color: 'secondary.main' }} />
-        <Typography 
-          variant="h4" 
+        <Typography
+          variant="h4"
           color="text.primary"
           sx={{ fontWeight: 700 }}
         >
@@ -95,9 +95,9 @@ const MLModelInfoComponent: React.FC = () => {
         </Typography>
       </Box>
 
-      <Box 
-        sx={{ 
-          display: 'grid', 
+      <Box
+        sx={{
+          display: 'grid',
           gridTemplateColumns: { xs: '1fr', lg: 'repeat(2, 1fr)' },
           gap: 3
         }}
@@ -292,82 +292,6 @@ const MLModelInfoComponent: React.FC = () => {
           </Box>
         </Paper>
 
-        {/* Alerts & Insights */}
-        <Paper
-          elevation={2}
-          sx={{
-            p: 3,
-            borderRadius: 2,
-            gridColumn: { xs: '1', lg: '1 / -1' }
-          }}
-        >
-          <Typography variant="h6" color="text.primary" sx={{ fontWeight: 600, mb: 3, display: 'flex', alignItems: 'center', gap: 1 }}>
-            <WarningIcon sx={{ color: '#fbbf24' }} />
-            Alerts & Recommendations
-          </Typography>
-
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' }, gap: 2 }}>
-            <Paper
-              variant="outlined"
-              sx={{
-                p: 2,
-                borderRadius: 2,
-                borderColor: 'success.main',
-                bgcolor: 'action.hover'
-              }}
-            >
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                <CheckCircleIcon sx={{ color: 'success.main', fontSize: 18 }} />
-                <Typography variant="body2" sx={{ color: 'success.main', fontWeight: 600 }}>
-                  Optimal Conditions
-                </Typography>
-              </Box>
-              <Typography variant="body2" color="text.secondary">
-                Temperature and humidity are within optimal range for fruiting.
-              </Typography>
-            </Paper>
-
-            <Paper
-              variant="outlined"
-              sx={{
-                p: 2,
-                borderRadius: 2,
-                borderColor: 'warning.main',
-                bgcolor: 'action.hover'
-              }}
-            >
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                <WarningIcon sx={{ color: 'warning.main', fontSize: 18 }} />
-                <Typography variant="body2" sx={{ color: 'warning.main', fontWeight: 600 }}>
-                  CO2 Warning
-                </Typography>
-              </Box>
-              <Typography variant="body2" color="text.secondary">
-                CO2 levels approaching upper limit. Consider increasing ventilation.
-              </Typography>
-            </Paper>
-
-            <Paper
-              variant="outlined"
-              sx={{
-                p: 2,
-                borderRadius: 2,
-                borderColor: 'info.main',
-                bgcolor: 'action.hover'
-              }}
-            >
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                <LightbulbIcon sx={{ color: 'info.main', fontSize: 18 }} />
-                <Typography variant="body2" sx={{ color: 'info.main', fontWeight: 600 }}>
-                  Suggestion
-                </Typography>
-              </Box>
-              <Typography variant="body2" color="text.secondary">
-                Based on current data, harvest window will open in approximately 9 days.
-              </Typography>
-            </Paper>
-          </Box>
-        </Paper>
       </Box>
     </Box>
   );

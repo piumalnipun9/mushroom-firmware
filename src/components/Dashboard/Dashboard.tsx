@@ -7,7 +7,7 @@ import SensorChart from './SensorChart';
 import SensorCard from './SensorCard';
 import VideoFeed from './VideoFeed';
 import { SensorData, CurrentSensorValues } from '../../types';
-import { subscribeSensorData, subscribeCurrentSensorValues } from '../../services/firebaseService';
+import { subscribeSensorData, subscribeCurrentSensorValues, subscribeCameraFrame } from '../../services/firebaseService';
 import { initializeFirebaseData } from '../../config/initFirebaseData';
 
 const Dashboard: React.FC = () => {
@@ -23,6 +23,7 @@ const Dashboard: React.FC = () => {
     humidity: 0,
     temperature: 0
   });
+  const [cameraFrame, setCameraFrame] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [dataInitialized, setDataInitialized] = useState(false);
 
@@ -42,6 +43,9 @@ const Dashboard: React.FC = () => {
         setDataInitialized(true);
       }
     });
+    const unsubscribeCamera = subscribeCameraFrame((frame) => {
+      setCameraFrame(frame);
+    });
 
     // Set loading to false after a timeout if no data
     const timeout = setTimeout(() => {
@@ -55,6 +59,7 @@ const Dashboard: React.FC = () => {
       unsubscribeHumidity();
       unsubscribeTemperature();
       unsubscribeCurrent();
+      unsubscribeCamera();
       clearTimeout(timeout);
     };
   }, []);
@@ -86,7 +91,7 @@ const Dashboard: React.FC = () => {
           No Data in Firebase
         </Typography>
         <Typography color="text.secondary" sx={{ textAlign: 'center', maxWidth: 500 }}>
-          Firebase database is empty. Click the button below to initialize sample data, 
+          Firebase database is empty. Click the button below to initialize sample data,
           or your ESP32 will update the values when connected.
         </Typography>
         <Button
@@ -107,8 +112,8 @@ const Dashboard: React.FC = () => {
     <Box>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 3 }}>
         <DashboardIcon color="primary" />
-        <Typography 
-          variant="h4" 
+        <Typography
+          variant="h4"
           sx={{ fontWeight: 700 }}
           color="text.primary"
         >
@@ -117,21 +122,21 @@ const Dashboard: React.FC = () => {
       </Box>
 
       {/* Video Feed and Quick Stats Section */}
-      <Box 
-        sx={{ 
-          display: 'grid', 
+      <Box
+        sx={{
+          display: 'grid',
           gridTemplateColumns: { xs: '1fr', lg: '1fr 1fr' },
           gap: 3,
           mb: 4
         }}
       >
-        <VideoFeed />
-        
+        <VideoFeed streamUrl={cameraFrame ? (cameraFrame.startsWith('data:image') ? cameraFrame : `data:image/jpeg;base64,${cameraFrame}`) : undefined} />
+
         {/* Quick Stats Summary */}
-        <Paper 
+        <Paper
           elevation={2}
-          sx={{ 
-            p: 3, 
+          sx={{
+            p: 3,
             borderRadius: 2,
             display: 'flex',
             flexDirection: 'column',
@@ -163,9 +168,9 @@ const Dashboard: React.FC = () => {
       </Box>
 
       {/* Current Sensor Values Cards */}
-      <Box 
-        sx={{ 
-          display: 'grid', 
+      <Box
+        sx={{
+          display: 'grid',
           gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(5, 1fr)' },
           gap: 2,
           mb: 4
@@ -231,18 +236,18 @@ const Dashboard: React.FC = () => {
       {/* Sensor Charts */}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
         <TimelineIcon color="primary" />
-        <Typography 
-          variant="h5" 
+        <Typography
+          variant="h5"
           sx={{ fontWeight: 600 }}
           color="text.primary"
         >
           Real-time Sensor Data
         </Typography>
       </Box>
-      
-      <Box 
-        sx={{ 
-          display: 'grid', 
+
+      <Box
+        sx={{
+          display: 'grid',
           gridTemplateColumns: { xs: '1fr', md: 'repeat(2, 1fr)' },
           gap: 3
         }}

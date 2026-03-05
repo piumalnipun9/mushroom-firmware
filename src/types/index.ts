@@ -61,8 +61,10 @@ export interface LightControl {
 
 export interface Alert {
   id: string;
-  type: 'warning' | 'error' | 'info' | 'success';
+  type: 'warning' | 'error' | 'info' | 'success' | 'pest';
   message: string;
   timestamp: number;
   acknowledged: boolean;
+  image?: string;
+  false_alarm?: boolean;
 }

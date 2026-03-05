@@ -17,7 +17,8 @@ import {
   Avatar,
   Menu,
   MenuItem,
-  Tooltip
+  Tooltip,
+  Badge
 } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import DashboardIcon from '@mui/icons-material/Dashboard';
@@ -32,12 +33,15 @@ import SettingsIcon from '@mui/icons-material/Settings';
 import LogoutIcon from '@mui/icons-material/Logout';
 import AgricultureIcon from '@mui/icons-material/Agriculture';
 import CloudDoneIcon from '@mui/icons-material/CloudDone';
+import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
 
 import Dashboard from './Dashboard/Dashboard';
 import MLModelInfoComponent from './MLModel/MLModelInfo';
 import RobotArmControl from './RobotArm/RobotArmControl';
 import SensorControls from './Sensors/SensorControls';
+import AlertsComponent from './Alerts/Alerts';
 import { useThemeMode } from '../context/ThemeContext';
+import { subscribeAlerts } from '../services/firebaseService';
 
 const drawerWidth = 280;
 
@@ -60,9 +64,17 @@ const Layout: React.FC = () => {
   const [currentTab, setCurrentTab] = useState('dashboard');
   const [mobileOpen, setMobileOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+  const [unacknowledgedAlertsCount, setUnacknowledgedAlertsCount] = React.useState(0);
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const { mode, toggleTheme } = useThemeMode();
+
+  React.useEffect(() => {
+    const unsubscribe = subscribeAlerts((data) => {
+      setUnacknowledgedAlertsCount(data.filter(a => !a.acknowledged).length);
+    });
+    return () => unsubscribe();
+  }, []);
 
   const tabs: TabItem[] = [
     {
@@ -88,6 +100,16 @@ const Layout: React.FC = () => {
       label: 'Sensor Controls',
       icon: <SensorsIcon />,
       component: <SensorControls />
+    },
+    {
+      id: 'alerts',
+      label: 'Alerts',
+      icon: (
+        <Badge badgeContent={unacknowledgedAlertsCount} color="error">
+          <NotificationsActiveIcon />
+        </Badge>
+      ),
+      component: <AlertsComponent />
     }
   ];
 
@@ -117,7 +139,7 @@ const Layout: React.FC = () => {
 
   // Theme-aware colors
   const bgSecondary = mode === 'dark' ? '#1a1a2e' : '#ffffff';
-  const bgGradient = mode === 'dark' 
+  const bgGradient = mode === 'dark'
     ? 'linear-gradient(180deg, #0f0f1a 0%, #1a1a2e 100%)'
     : 'linear-gradient(180deg, #ffffff 0%, #f8f9fa 100%)';
   const borderColor = mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
@@ -127,7 +149,7 @@ const Layout: React.FC = () => {
 
   const drawer = (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', background: bgGradient }}>
-      <Toolbar sx={{ 
+      <Toolbar sx={{
         borderBottom: `1px solid ${borderColor}`
       }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
@@ -172,13 +194,13 @@ const Layout: React.FC = () => {
               <ListItemIcon sx={{ color: textSecondary, minWidth: 44 }}>
                 {tab.icon}
               </ListItemIcon>
-              <ListItemText 
-                primary={tab.label} 
-                sx={{ 
-                  '& .MuiListItemText-primary': { 
+              <ListItemText
+                primary={tab.label}
+                sx={{
+                  '& .MuiListItemText-primary': {
                     color: textPrimary,
                     fontSize: '0.95rem'
-                  } 
+                  }
                 }}
               />
             </ListItemButton>
@@ -208,8 +230,8 @@ const Layout: React.FC = () => {
         sx={{
           width: { md: `calc(100% - ${drawerWidth}px)` },
           ml: { md: `${drawerWidth}px` },
-          background: mode === 'dark' 
-            ? 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)' 
+          background: mode === 'dark'
+            ? 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)'
             : '#ffffff',
           boxShadow: mode === 'dark' ? 'none' : '0 1px 3px rgba(0,0,0,0.1)',
           borderBottom: `1px solid ${borderColor}`
@@ -241,9 +263,9 @@ const Layout: React.FC = () => {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             {/* Theme Toggle */}
             <Tooltip title={mode === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}>
-              <IconButton 
-                onClick={toggleTheme} 
-                sx={{ 
+              <IconButton
+                onClick={toggleTheme}
+                sx={{
                   color: textSecondary,
                   '&:hover': {
                     backgroundColor: mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.04)'
@@ -255,10 +277,10 @@ const Layout: React.FC = () => {
             </Tooltip>
 
             {/* User Info */}
-            <Box 
-              sx={{ 
-                display: 'flex', 
-                alignItems: 'center', 
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
                 gap: 1.5,
                 cursor: 'pointer',
                 px: 1.5,
@@ -278,10 +300,10 @@ const Layout: React.FC = () => {
                   {currentUser.role}
                 </Typography>
               </Box>
-              <Avatar 
-                sx={{ 
-                  width: 40, 
-                  height: 40, 
+              <Avatar
+                sx={{
+                  width: 40,
+                  height: 40,
                   bgcolor: '#3b82f6',
                   fontSize: '1rem',
                   fontWeight: 600
@@ -362,7 +384,7 @@ const Layout: React.FC = () => {
         >
           {drawer}
         </Drawer>
-        
+
         {/* Desktop drawer */}
         <Drawer
           variant="permanent"
@@ -389,7 +411,7 @@ const Layout: React.FC = () => {
           p: 3,
           width: { md: `calc(100% - ${drawerWidth}px)` },
           minHeight: '100vh',
-          background: mode === 'dark' 
+          background: mode === 'dark'
             ? 'linear-gradient(135deg, #0f0f1a 0%, #1a1a2e 50%, #16213e 100%)'
             : 'linear-gradient(135deg, #f5f5f5 0%, #fafafa 50%, #f0f0f0 100%)',
           mt: 8

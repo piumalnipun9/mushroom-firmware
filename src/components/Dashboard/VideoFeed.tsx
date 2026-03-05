@@ -11,9 +11,9 @@ interface VideoFeedProps {
   title?: string;
 }
 
-const VideoFeed: React.FC<VideoFeedProps> = ({ 
-  streamUrl, 
-  title = 'Live Camera Feed' 
+const VideoFeed: React.FC<VideoFeedProps> = ({
+  streamUrl,
+  title = 'Live Camera Feed'
 }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -23,25 +23,21 @@ const VideoFeed: React.FC<VideoFeedProps> = ({
   const handleRetryConnection = useCallback(() => {
     setIsLoading(true);
     setError(null);
-    
-    // Simulate connection attempt
+
+    // Quick reload connection check
     setTimeout(() => {
-      if (streamUrl) {
-        setIsConnected(true);
-        setError(null);
-      } else {
-        setIsConnected(false);
-        setError('Connection failed - No stream URL configured');
-      }
       setIsLoading(false);
-    }, 2000);
-  }, [streamUrl]);
+    }, 500);
+  }, []);
 
   useEffect(() => {
-    if (streamUrl) {
-      handleRetryConnection();
+    if (streamUrl && streamUrl.length > 30) {
+      setIsConnected(true);
+      setError(null);
+    } else {
+      setIsConnected(false);
     }
-  }, [streamUrl, handleRetryConnection]);
+  }, [streamUrl]);
 
   const borderColor = mode === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
   const textColor = mode === 'dark' ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.6)';
@@ -53,8 +49,8 @@ const VideoFeed: React.FC<VideoFeedProps> = ({
         p: 2,
         height: '100%',
         minHeight: 300,
-        background: mode === 'dark' 
-          ? 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)' 
+        background: mode === 'dark'
+          ? 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)'
           : 'linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%)',
         borderRadius: 2,
         border: `1px solid ${borderColor}`,
@@ -63,15 +59,15 @@ const VideoFeed: React.FC<VideoFeedProps> = ({
       }}
     >
       {/* Header */}
-      <Box sx={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center', 
-        mb: 2 
+      <Box sx={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        mb: 2
       }}>
-        <Typography 
-          variant="h6" 
-          sx={{ 
+        <Typography
+          variant="h6"
+          sx={{
             color: mode === 'dark' ? 'white' : '#1a1a2e',
             fontWeight: 600,
             display: 'flex',
@@ -87,8 +83,8 @@ const VideoFeed: React.FC<VideoFeedProps> = ({
             label={isConnected ? 'LIVE' : 'OFFLINE'}
             size="small"
             sx={{
-              backgroundColor: isConnected 
-                ? 'rgba(76, 175, 80, 0.2)' 
+              backgroundColor: isConnected
+                ? 'rgba(76, 175, 80, 0.2)'
                 : 'rgba(244, 67, 54, 0.2)',
               color: isConnected ? '#4caf50' : '#f44336',
               fontWeight: 600,
@@ -98,27 +94,27 @@ const VideoFeed: React.FC<VideoFeedProps> = ({
               }
             }}
           />
-          <IconButton 
-            size="small" 
+          <IconButton
+            size="small"
             onClick={handleRetryConnection}
             disabled={isLoading}
-            sx={{ 
+            sx={{
               color: textColor,
               '&:hover': {
-                backgroundColor: mode === 'dark' 
-                  ? 'rgba(255,255,255,0.1)' 
+                backgroundColor: mode === 'dark'
+                  ? 'rgba(255,255,255,0.1)'
                   : 'rgba(0,0,0,0.05)'
               }
             }}
           >
-            <RefreshIcon 
-              sx={{ 
+            <RefreshIcon
+              sx={{
                 animation: isLoading ? 'spin 1s linear infinite' : 'none',
                 '@keyframes spin': {
                   '0%': { transform: 'rotate(0deg)' },
                   '100%': { transform: 'rotate(360deg)' }
                 }
-              }} 
+              }}
             />
           </IconButton>
         </Box>
@@ -140,8 +136,8 @@ const VideoFeed: React.FC<VideoFeedProps> = ({
         }}
       >
         {isConnected && streamUrl ? (
-          <img 
-            src={streamUrl} 
+          <img
+            src={streamUrl}
             alt="Live Feed"
             style={{
               width: '100%',
@@ -166,8 +162,8 @@ const VideoFeed: React.FC<VideoFeedProps> = ({
                 width: 80,
                 height: 80,
                 borderRadius: '50%',
-                backgroundColor: mode === 'dark' 
-                  ? 'rgba(244, 67, 54, 0.1)' 
+                backgroundColor: mode === 'dark'
+                  ? 'rgba(244, 67, 54, 0.1)'
                   : 'rgba(244, 67, 54, 0.1)',
                 display: 'flex',
                 alignItems: 'center',
@@ -181,9 +177,9 @@ const VideoFeed: React.FC<VideoFeedProps> = ({
               )}
             </Box>
             <Box>
-              <Typography 
-                variant="h6" 
-                sx={{ 
+              <Typography
+                variant="h6"
+                sx={{
                   color: mode === 'dark' ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.8)',
                   fontWeight: 600,
                   mb: 0.5
@@ -191,9 +187,9 @@ const VideoFeed: React.FC<VideoFeedProps> = ({
               >
                 No Video Signal
               </Typography>
-              <Typography 
-                variant="body2" 
-                sx={{ 
+              <Typography
+                variant="body2"
+                sx={{
                   color: textColor,
                   maxWidth: 280
                 }}
@@ -207,8 +203,8 @@ const VideoFeed: React.FC<VideoFeedProps> = ({
                 px: 2,
                 py: 1,
                 borderRadius: 1,
-                backgroundColor: mode === 'dark' 
-                  ? 'rgba(255,255,255,0.05)' 
+                backgroundColor: mode === 'dark'
+                  ? 'rgba(255,255,255,0.05)'
                   : 'rgba(0,0,0,0.05)',
                 border: `1px dashed ${mode === 'dark' ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)'}`
               }}
@@ -243,9 +239,9 @@ const VideoFeed: React.FC<VideoFeedProps> = ({
       </Box>
 
       {/* Footer Info */}
-      <Box sx={{ 
-        mt: 2, 
-        display: 'flex', 
+      <Box sx={{
+        mt: 2,
+        display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center'
       }}>

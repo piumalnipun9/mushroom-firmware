@@ -1,0 +1,24 @@
+{
+  "alert_1": {
+    "acknowledged": true,
+    "message": "System started successfully",
+    "timestamp": 1772645702987,
+    "type": "info"
+  },
+  "alert_2": {
+    "acknowledged": true,
+    "message": "CO2 levels approaching upper threshold",
+    "timestamp": 1772647502987,
+    "type": "warning"
+  },
+  "alert_3": {
+    "acknowledged": true,
+    "message": "Optimal humidity maintained for 24 hours",
+    "timestamp": 1772648402987,
+    "type": "success"
+  },
+  "latest": {
+    "status": "Healthy",
+    "time": "2026-03-05 01:15:21.634395"
+  }
+}
