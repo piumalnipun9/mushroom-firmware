@@ -11,8 +11,8 @@
 #include "SDLogger.h"
 
 // ---- Configuration: set these before upload ----
-const char *WIFI_SSID = "Pixel 6a";
-const char *WIFI_PASSWORD = "12345678";
+const char *WIFI_SSID = "iPhone";
+const char *WIFI_PASSWORD = "12345678";  
 
 // Example Firebase from repository; replace with your DB host and secret
 const char *FIREBASE_HOST = "https://project-mushroom-2f8a9-default-rtdb.asia-southeast1.firebasedatabase.app/";
@@ -33,6 +33,8 @@ const unsigned long humidifierPollIntervalMs = 1000; // Poll humidifier mode eve
 void setup()
 {
     Serial.begin(9600);
+
+
 
     WiFiManagerMod::begin(WIFI_SSID, WIFI_PASSWORD);
     FirebaseHTTP::begin(FIREBASE_HOST, FIREBASE_SECRET);
@@ -234,14 +236,7 @@ void loop()
             float moist = Sensors::readMoisture();
             float ph    = Sensors::readPH();
 
-            // Build Unix timestamp: millis() will be ~seconds since boot;
-            // add a fixed epoch offset so the CSV has real wall-clock time.
-            // Adjust EPOCH_OFFSET_MS to current Unix time in ms when flashing.
-            const unsigned long long EPOCH_OFFSET_MS = 1741462052000ULL; // 2025-03-09 approx
-            unsigned long long unixMs = EPOCH_OFFSET_MS + (unsigned long long)millis();
-
-            SDLogger::logSensorReading(loc, (unsigned long)unixMs,
-                                       temp, hum, co2, moist, ph);
+            SDLogger::logSensorReading(loc, temp, hum, co2, moist, ph);
         }
     }
 

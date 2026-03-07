@@ -31,7 +31,7 @@ namespace RobotArm {
   constexpr float SERVO_SPEED_US_PER_S = 3000.0;
 
   // Stepper pulse interval (µs between pulses — lower = faster)
-  constexpr unsigned int STEP_INTERVAL_US = 800;
+  constexpr unsigned int STEP_INTERVAL_US = 400;
   // ─────────────────────────────────────────────────────────────────────────
 
   enum State {

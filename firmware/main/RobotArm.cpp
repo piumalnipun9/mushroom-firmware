@@ -1,4 +1,5 @@
 #include "RobotArm.h"
+#include "Config.h"
 #include <ESP32Servo.h>
 #include <Arduino.h>
 
@@ -95,10 +96,15 @@ namespace RobotArm
             for (int i = 0; i <= steps2; i++)
             {
                 // Pause handling
-                while (motionPaused)
+                if (motionPaused)
                 {
-                    delay(10);
-                    yield();
+                    Serial.println("[RobotArm] Paused by Emergency Stop button");
+                    while (motionPaused)
+                    {
+                        delay(10);
+                        yield();
+                    }
+                    Serial.println("[RobotArm] Resumed");
                 }
 
                 svCurrent2 = svStart2 + (int)(inc2 * i);
@@ -124,10 +130,15 @@ namespace RobotArm
             for (int i = 0; i <= steps1; i++)
             {
                 // Pause handling
-                while (motionPaused)
+                if (motionPaused)
                 {
-                    delay(10);
-                    yield();
+                    Serial.println("[RobotArm] Paused by Emergency Stop button");
+                    while (motionPaused)
+                    {
+                        delay(10);
+                        yield();
+                    }
+                    Serial.println("[RobotArm] Resumed");
                 }
 
                 svCurrent1 = svStart1 + (int)(inc1 * i);
@@ -273,10 +284,15 @@ namespace RobotArm
                         }
 
                         // Pause handling
-                        while (motionPaused)
+                        if (motionPaused)
                         {
-                            delay(10);
-                            yield();
+                            Serial.println("[RobotArm] Paused by Emergency Stop button");
+                            while (motionPaused)
+                            {
+                                delay(10);
+                                yield();
+                            }
+                            Serial.println("[RobotArm] Resumed");
                         }
                     }
 
@@ -355,10 +371,15 @@ namespace RobotArm
                 }
 
                 // Pause handling
-                while (motionPaused)
+                if (motionPaused)
                 {
-                    delay(10);
-                    yield();
+                    Serial.println("[RobotArm] Paused by Emergency Stop button");
+                    while (motionPaused)
+                    {
+                        delay(10);
+                        yield();
+                    }
+                    Serial.println("[RobotArm] Resumed");
                 }
             }
 

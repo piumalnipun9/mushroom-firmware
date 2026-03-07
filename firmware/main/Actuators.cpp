@@ -11,8 +11,10 @@ namespace Actuators
 
     void begin()
     {
-        pinMode(PIN_HUMIDIFIER, OUTPUT);
+        // Write the state BEFORE setting pinMode to OUTPUT to prevent
+        // the pin from briefly floating LOW and triggering the relay.
         digitalWrite(PIN_HUMIDIFIER, HIGH); // OFF by default
+        pinMode(PIN_HUMIDIFIER, OUTPUT);
         humidifierOn = false;
         Serial.printf("[Actuators] Humidifier on pin %d — HIGH=OFF, LOW=ON\n", PIN_HUMIDIFIER);
     }
@@ -27,9 +29,11 @@ namespace Actuators
 
     void turnOff()
     {
-        if (!humidifierOn) return;
-        humidifierOn = false;
+        // Always write HIGH just in case the physical pin state drifted
         digitalWrite(PIN_HUMIDIFIER, HIGH);
+        
+        if (!humidifierOn) return; // avoid duplicate serial prints
+        humidifierOn = false;
         Serial.println("[Actuators] Humidifier OFF (HIGH)");
     }
 

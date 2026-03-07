@@ -5,7 +5,6 @@ namespace SDLogger
 {
     bool begin();
 
-    void logSensorReading(int plotId, unsigned long unixMs,
-                          float temp, float hum, float co2,
+    void logSensorReading(int plotId, float temp, float hum, float co2,
                           float moist, float ph);
 }

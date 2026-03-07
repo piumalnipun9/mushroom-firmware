@@ -6,7 +6,8 @@
 
 namespace SDLogger
 {
-    static const char* CSV_FILE = "/sensors.csv";
+    static const char* DIR_NAME = "/sensor data";
+    static const char* CSV_FILE = "/sensor data/sensors.csv";
     static bool sdReady = false;
 
     bool begin()
@@ -14,7 +15,10 @@ namespace SDLogger
         // Use custom SPI pins for the SD card
         SPI.begin(PIN_SD_SCK, PIN_SD_MISO, PIN_SD_MOSI, PIN_SD_CS);
 
-        if (!SD.begin(PIN_SD_CS))
+        // Many breakout SD modules fail at the ESP32 default 40MHz on jumper wires.
+        // We explicitly pass the SPI class and limit the speed to 4 MHz.
+        // SD.begin(CS_PIN, SPI_CLASS, FREQ_HZ, MOUNT_DIR, MAX_FILES, FORMAT_IF_EMPTY)
+        if (!SD.begin(PIN_SD_CS, SPI, 4000000, "/sd", 5, false))
         {
             Serial.println("[SDLogger] SD card init failed — check wiring/card.");
             sdReady = false;
@@ -24,13 +28,19 @@ namespace SDLogger
         sdReady = true;
         Serial.println("[SDLogger] SD card ready.");
 
+        // Create directory if it doesn't exist
+        if (!SD.exists(DIR_NAME))
+        {
+            SD.mkdir(DIR_NAME);
+        }
+
         // Write CSV header if the file doesn't exist yet
         if (!SD.exists(CSV_FILE))
         {
             File f = SD.open(CSV_FILE, FILE_WRITE);
             if (f)
             {
-                f.println("unix_timestamp_ms,plot_id,temperature_c,humidity_pct,co2_ppm,soil_moisture_pct,soil_ph");
+                f.println("plot_id,temperature_c,humidity_pct,co2_ppm,soil_moisture_pct,soil_ph");
                 f.close();
                 Serial.println("[SDLogger] Created sensors.csv with header.");
             }
@@ -43,8 +53,7 @@ namespace SDLogger
         return true;
     }
 
-    void logSensorReading(int plotId, unsigned long unixMs,
-                          float temp, float hum, float co2,
+    void logSensorReading(int plotId, float temp, float hum, float co2,
                           float moist, float ph)
     {
         if (!sdReady)
@@ -60,9 +69,7 @@ namespace SDLogger
             return;
         }
 
-        // Format: unix_ms,plot,temp,hum,co2,moist,ph
-        f.print(unixMs);
-        f.print(',');
+        // Format: plot,temp,hum,co2,moist,ph
         f.print(plotId);
         f.print(',');
         f.print(temp, 2);
