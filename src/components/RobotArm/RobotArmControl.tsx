@@ -19,11 +19,10 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import HomeIcon from '@mui/icons-material/Home';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import { RobotArmPosition } from '../../types';
-import { 
-  subscribeRobotArmPosition, 
-  moveRobotToPlot, 
-  updateRobotStatus
+import { RobotArmStatus } from '../../types';
+import {
+  subscribeRobotArmStatus,
+  sendRobotCommand
 } from '../../services/firebaseService';
 
 interface Plot {
@@ -33,35 +32,32 @@ interface Plot {
 }
 
 const RobotArmControl: React.FC = () => {
-  const [robotPosition, setRobotPosition] = useState<RobotArmPosition>({
+  const [robotStatus, setRobotStatus] = useState<RobotArmStatus>({
     currentPlot: 0,
-    status: 'idle',
+    state: 'idle',
     lastAction: 'Waiting for data...'
   });
   const [plots] = useState<Plot[]>([
+    { id: 0, name: 'Home', status: 'active' },
     { id: 1, name: 'Plot 1', status: 'active' },
     { id: 2, name: 'Plot 2', status: 'active' },
     { id: 3, name: 'Plot 3', status: 'active' },
     { id: 4, name: 'Plot 4', status: 'active' },
   ]);
   const [selectedPlot, setSelectedPlot] = useState<number>(1);
-  const [isMoving, setIsMoving] = useState(false);
+  const isMoving = robotStatus.state === 'moving' || robotStatus.state === 'stopping';
 
   useEffect(() => {
-    const unsubscribeRobot = subscribeRobotArmPosition((data) => {
+    const unsub = subscribeRobotArmStatus((data) => {
       if (data) {
-        setRobotPosition({
-          currentPlot: data.currentPlot || 1,
-          status: data.status || 'idle',
+        setRobotStatus({
+          currentPlot: data.currentPlot ?? 0,
+          state: data.state || 'idle',
           lastAction: data.lastAction || 'System ready'
         });
-        setIsMoving(data.status === 'moving');
       }
     });
-
-    return () => {
-      unsubscribeRobot();
-    };
+    return () => unsub();
   }, []);
 
   const handlePlotSelect = (event: SelectChangeEvent<number>) => {
@@ -69,30 +65,23 @@ const RobotArmControl: React.FC = () => {
   };
 
   const handleMoveToPlot = async () => {
-    await moveRobotToPlot(selectedPlot);
-    // Firebase subscription drives robotPosition & isMoving automatically
+    await sendRobotCommand('move', selectedPlot);
   };
 
-  const handleEmergencyStop = async () => {
-    await updateRobotStatus('idle');
-    setIsMoving(false);
-    setRobotPosition(prev => ({
-      ...prev,
-      status: 'idle',
-      lastAction: 'Emergency stop activated'
-    }));
+  const handleGoHome = async () => {
+    await sendRobotCommand('home');
   };
 
-  const handleReturnHome = async () => {
-    await moveRobotToPlot(1);
-    // Firebase subscription drives robotPosition & isMoving automatically
+  const handleStop = async () => {
+    await sendRobotCommand('stop');
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'idle': return '#4caf50';
       case 'moving': return '#ff9800';
-      case 'operating': return '#2196f3';
+      case 'stopping': return '#f44336';
+      case 'homing': return '#9c27b0';
       default: return '#9e9e9e';
     }
   };
@@ -101,8 +90,8 @@ const RobotArmControl: React.FC = () => {
     <Box>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
         <PrecisionManufacturingIcon sx={{ fontSize: 40 }} color="primary" />
-        <Typography 
-          variant="h4" 
+        <Typography
+          variant="h4"
           color="text.primary"
           sx={{ fontWeight: 700 }}
         >
@@ -110,9 +99,9 @@ const RobotArmControl: React.FC = () => {
         </Typography>
       </Box>
 
-      <Box 
-        sx={{ 
-          display: 'grid', 
+      <Box
+        sx={{
+          display: 'grid',
           gridTemplateColumns: { xs: '1fr', lg: 'repeat(2, 1fr)' },
           gap: 3
         }}
@@ -139,15 +128,15 @@ const RobotArmControl: React.FC = () => {
                   position: 'relative'
                 }}
               >
-                <LocationOnIcon sx={{ color: 'primary.main', fontSize: 32, position: 'absolute', display: robotPosition.currentPlot === 0 ? 'none' : 'block' }} />
-                <HomeIcon sx={{ color: 'primary.main', fontSize: 32, position: 'absolute', display: robotPosition.currentPlot === 0 ? 'block' : 'none' }} />
+                <LocationOnIcon sx={{ color: 'primary.main', fontSize: 32, position: 'absolute', display: robotStatus.currentPlot === 0 ? 'none' : 'block' }} />
+                <HomeIcon sx={{ color: 'primary.main', fontSize: 32, position: 'absolute', display: robotStatus.currentPlot === 0 ? 'block' : 'none' }} />
               </Box>
               <Box>
                 <Typography variant="body2" color="text.secondary">
                   Current Position
                 </Typography>
                 <Typography variant="h5" color="text.primary" sx={{ fontWeight: 600 }}>
-                  {robotPosition.currentPlot === 0 ? 'Home' : `Plot ${robotPosition.currentPlot}`}
+                  {robotStatus.currentPlot === 0 ? 'Home' : `Plot ${robotStatus.currentPlot}`}
                 </Typography>
               </Box>
             </Box>
@@ -159,10 +148,10 @@ const RobotArmControl: React.FC = () => {
               </Typography>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                 <Chip
-                  label={robotPosition.status.toUpperCase()}
+                  label={robotStatus.state.toUpperCase()}
                   sx={{
-                    backgroundColor: `${getStatusColor(robotPosition.status)}20`,
-                    color: getStatusColor(robotPosition.status),
+                    backgroundColor: `${getStatusColor(robotStatus.state)}20`,
+                    color: getStatusColor(robotStatus.state),
                     fontWeight: 600,
                     fontSize: '0.9rem',
                     py: 2
@@ -171,7 +160,7 @@ const RobotArmControl: React.FC = () => {
                     isMoving ? (
                       <CircularProgress size={16} sx={{ color: '#ff9800' }} />
                     ) : (
-                      <CheckCircleIcon sx={{ color: `${getStatusColor(robotPosition.status)} !important` }} />
+                      <CheckCircleIcon sx={{ color: `${getStatusColor(robotStatus.state)} !important` }} />
                     )
                   }
                 />
@@ -184,7 +173,7 @@ const RobotArmControl: React.FC = () => {
                 Last Action
               </Typography>
               <Typography variant="body1" color="text.primary">
-                {robotPosition.lastAction}
+                {robotStatus.lastAction}
               </Typography>
             </Box>
           </Box>
@@ -209,8 +198,8 @@ const RobotArmControl: React.FC = () => {
                 onChange={handlePlotSelect}
               >
                 {plots.map((plot) => (
-                  <MenuItem 
-                    key={plot.id} 
+                  <MenuItem
+                    key={plot.id}
                     value={plot.id}
                     disabled={plot.status === 'inactive'}
                   >
@@ -219,7 +208,7 @@ const RobotArmControl: React.FC = () => {
                       {plot.status === 'inactive' && (
                         <Chip label="Inactive" size="small" color="warning" />
                       )}
-                      {plot.id === robotPosition.currentPlot && (
+                      {plot.id === robotStatus.currentPlot && (
                         <Chip label="Current" size="small" color="success" />
                       )}
                     </Box>
@@ -235,33 +224,34 @@ const RobotArmControl: React.FC = () => {
                 size="large"
                 startIcon={isMoving ? <CircularProgress size={20} color="inherit" /> : <PlayArrowIcon />}
                 onClick={handleMoveToPlot}
-                disabled={isMoving || selectedPlot === robotPosition.currentPlot}
+                disabled={isMoving || selectedPlot === robotStatus.currentPlot || selectedPlot === 0}
                 color="success"
                 sx={{ flex: 1 }}
               >
-                {isMoving ? 'Moving...' : 'Move to Plot'}
+                {isMoving && robotStatus.state === 'moving' ? 'Moving...' : 'Move to Plot'}
               </Button>
 
               <Button
                 variant="contained"
                 size="large"
                 startIcon={<HomeIcon />}
-                onClick={handleReturnHome}
-                disabled={isMoving || robotPosition.currentPlot === 1}
+                onClick={handleGoHome}
+                disabled={isMoving || robotStatus.currentPlot === 0}
                 color="primary"
               >
-                Home
+                Go Home
               </Button>
             </Box>
 
             <Button
               variant="contained"
               size="large"
-              startIcon={<StopIcon />}
-              onClick={handleEmergencyStop}
+              startIcon={isMoving ? <CircularProgress size={20} color="inherit" /> : <StopIcon />}
+              onClick={handleStop}
+              disabled={robotStatus.state === 'idle'}
               color="error"
             >
-              Emergency Stop
+              {robotStatus.state === 'stopping' ? 'Stopping...' : 'Stop'}
             </Button>
           </Box>
         </Paper>
@@ -272,9 +262,9 @@ const RobotArmControl: React.FC = () => {
             Plot Overview
           </Typography>
 
-          <Box 
-            sx={{ 
-              display: 'grid', 
+          <Box
+            sx={{
+              display: 'grid',
               gridTemplateColumns: 'repeat(2, 1fr)',
               gap: 2
             }}
@@ -284,52 +274,53 @@ const RobotArmControl: React.FC = () => {
                 key={plot.id}
                 variant="outlined"
                 onClick={() => {
-                  if (plot.status === 'active' && !isMoving) {
+                  // Home (id=0) is display-only; use Go Home button
+                  if (plot.status === 'active' && !isMoving && plot.id !== 0) {
                     setSelectedPlot(plot.id);
                   }
                 }}
                 sx={{
                   p: 2,
-                  backgroundColor: 
-                    robotPosition.currentPlot === plot.id
+                  backgroundColor:
+                    robotStatus.currentPlot === plot.id
                       ? 'success.main'
                       : selectedPlot === plot.id
                         ? 'primary.main'
                         : 'action.hover',
                   opacity: plot.status === 'inactive' ? 0.5 : 1,
-                  borderColor: 
-                    robotPosition.currentPlot === plot.id
+                  borderColor:
+                    robotStatus.currentPlot === plot.id
                       ? 'success.main'
                       : selectedPlot === plot.id
                         ? 'primary.main'
                         : 'divider',
                   borderWidth: 2,
                   borderRadius: 2,
-                  cursor: plot.status === 'active' && !isMoving ? 'pointer' : 'default',
+                  cursor: plot.status === 'active' && !isMoving && plot.id !== 0 ? 'pointer' : 'default',
                   transition: 'all 0.2s',
-                  '&:hover': plot.status === 'active' && !isMoving ? {
+                  '&:hover': plot.status === 'active' && !isMoving && plot.id !== 0 ? {
                     transform: 'scale(1.02)'
                   } : {}
                 }}
               >
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Typography 
-                    variant="h6" 
-                    sx={{ 
+                  <Typography
+                    variant="h6"
+                    sx={{
                       fontWeight: 600,
-                      color: robotPosition.currentPlot === plot.id || selectedPlot === plot.id ? 'white' : 'text.primary'
+                      color: robotStatus.currentPlot === plot.id || selectedPlot === plot.id ? 'white' : 'text.primary'
                     }}
                   >
                     {plot.name}
                   </Typography>
-                  {robotPosition.currentPlot === plot.id && (
+                  {robotStatus.currentPlot === plot.id && (
                     <PrecisionManufacturingIcon sx={{ color: 'white' }} />
                   )}
                 </Box>
-                <Typography 
-                  variant="caption" 
-                  sx={{ 
-                    color: robotPosition.currentPlot === plot.id || selectedPlot === plot.id ? 'rgba(255,255,255,0.8)' : 'text.secondary'
+                <Typography
+                  variant="caption"
+                  sx={{
+                    color: robotStatus.currentPlot === plot.id || selectedPlot === plot.id ? 'rgba(255,255,255,0.8)' : 'text.secondary'
                   }}
                 >
                   {plot.status === 'inactive' ? 'Inactive' : 'Active'}

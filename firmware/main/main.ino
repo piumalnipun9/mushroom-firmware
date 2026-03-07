@@ -40,15 +40,17 @@ void setup()
     Actuators::begin();
 
     // Write homing status BEFORE the blocking homing sequence so UI updates immediately
-    FirebaseHTTP::put("robotArm/status", String("\"homing\""));
-    FirebaseHTTP::put("robotArm/currentPlot", String(0));
-    FirebaseHTTP::put("robotArm/lastAction", String("\"Homing in progress...\""));
+    FirebaseHTTP::put("robotArm/status/state", String("\"homing\""));
+    FirebaseHTTP::put("robotArm/status/currentPlot", String(0));
+    FirebaseHTTP::put("robotArm/status/lastAction", String("\"Homing in progress...\""));
+    // Initialise command field so firmware always has a valid value to read
+    FirebaseHTTP::put("robotArm/command/action", String("\"none\""));
 
     RobotArm::begin(); // blocking — stepper homes here
 
     // Homing complete
-    FirebaseHTTP::put("robotArm/status", String("\"idle\""));
-    FirebaseHTTP::put("robotArm/lastAction", String("\"System homed and ready\""));
+    FirebaseHTTP::put("robotArm/status/state", String("\"idle\""));
+    FirebaseHTTP::put("robotArm/status/lastAction", String("\"System homed and ready\""));
 
     Serial.println("[Main] System initialized");
 }
@@ -78,7 +80,7 @@ int firebaseGet(const String &path, String *response)
     return code;
 }
 
-// Poll humidifier mode from Firebase and sync with Actuators
+// Poll humidifier mode from Firebase and drive the module via pulses
 void pollHumidifierMode()
 {
     unsigned long now = millis();
@@ -86,6 +88,9 @@ void pollHumidifierMode()
         return;
 
     lastHumidifierPollMs = now;
+
+    if (Actuators::isBusy())
+        return; // pulses in progress — ignore new commands
 
     String resp;
     int code = firebaseGet("humidifier", &resp);
@@ -96,12 +101,10 @@ void pollHumidifierMode()
         if (!err && doc["mode"].is<const char *>())
         {
             String mode = doc["mode"].as<String>();
-            if (mode == "OFF")
-                Actuators::setHumidifierMode(Actuators::MODE_OFF);
-            else if (mode == "SLOW")
-                Actuators::setHumidifierMode(Actuators::MODE_SLOW);
-            else if (mode == "FAST")
-                Actuators::setHumidifierMode(Actuators::MODE_FAST);
+            if (mode == "ON")
+                Actuators::turnOn();
+            else if (mode == "OFF")
+                Actuators::turnOff();
         }
     }
 }
@@ -116,28 +119,42 @@ void loop()
 
     unsigned long now = millis();
 
-    // ===== Read sensors and update current values every 5 seconds =====
-    if (now - lastSendMs >= sendIntervalMs)
+    // ===== Read sensors and update Firebase — skip while arm servos are moving =====
+    // HTTP calls can block 100–500 ms and would cause the servo to visibly jump.
+    // During STATE_MOVING_STEPPER the stepper has its own yield() cadence, so
+    // only the servo phases (IDLE_ARM / TARGET_ARM / STOPPING) need protection.
+    bool armInServoPhase = (RobotArm::getState() == RobotArm::STATE_MOVING_TO_IDLE_ARM ||
+                            RobotArm::getState() == RobotArm::STATE_MOVING_TO_TARGET_ARM ||
+                            RobotArm::getState() == RobotArm::STATE_STOPPING);
+
+    if (!armInServoPhase && now - lastSendMs >= sendIntervalMs)
     {
         lastSendMs = now;
 
         float temp = Sensors::readTemperature();
         float hum = Sensors::readHumidity();
         float co2 = Sensors::readCO2();
-        float moist = Sensors::readMoisture();
-        float ph = Sensors::readPH();
+        
+        static float lastMoist = 0;
+        static float lastPh = 0;
+        
+        // Only read moisture and pH if the arm is parked in a plot
+        // Otherwise, probe is in the air reading invalid data
+        bool armAtPlot = RobotArm::isIdle() && RobotArm::getCurrentLocation() > 0;
+        if (armAtPlot) {
+            lastMoist = Sensors::readMoisture();
+            lastPh = Sensors::readPH();
+        }
 
-        // Print sensor readings
-        Serial.printf("Temp: %.1fC, Hum: %.1f%%, CO2: %.0f, Moist: %.0f%%, pH: %.1f\n",
-                      temp, hum, co2, moist, ph);
+        Serial.printf("Temp: %.1fC, Hum: %.1f%%, CO2: %.0f, Moist: %.0f%%, pH: %.1f %s\n",
+                      temp, hum, co2, lastMoist, lastPh, armAtPlot ? "(Updated soil)" : "(Cached)");
 
-        // Update current sensor values (single PUT - fast)
         StaticJsonDocument<256> doc;
         doc["temperature"] = temp;
         doc["humidity"] = hum;
         doc["co2"] = co2;
-        doc["moisture"] = moist;
-        doc["ph"] = ph;
+        doc["moisture"] = lastMoist;
+        doc["ph"] = lastPh;
 
         String payload;
         serializeJson(doc, payload);
@@ -169,19 +186,24 @@ void loop()
             serializeJson(hist, hco2);
             FirebaseHTTP::post("sensors/co2/history", hco2);
 
-            hist["value"] = moist;
-            String hmo;
-            serializeJson(hist, hmo);
-            FirebaseHTTP::post("sensors/moisture/history", hmo);
+            if (armAtPlot) {
+                hist["value"] = lastMoist;
+                String hmo;
+                serializeJson(hist, hmo);
+                FirebaseHTTP::post("sensors/moisture/history", hmo);
 
-            hist["value"] = ph;
-            String hph;
-            serializeJson(hist, hph);
-            FirebaseHTTP::post("sensors/ph/history", hph);
+                hist["value"] = lastPh;
+                String hph;
+                serializeJson(hist, hph);
+                FirebaseHTTP::post("sensors/ph/history", hph);
+            }
 
             Serial.println("History posted.");
         }
     }
+
+    // ===== Humidifier: handle SLOW mode timed toggling =====
+    Actuators::update();
 
     // ===== Robot Arm: tick the non-blocking state machine =====
     RobotArm::update();
@@ -190,63 +212,96 @@ void loop()
     if (RobotArm::checkAndClearArrival())
     {
         int loc = RobotArm::getCurrentLocation();
-        FirebaseHTTP::put("robotArm/currentPlot", String(loc));
-        FirebaseHTTP::put("robotArm/status", String("\"idle\""));
-        String action = "\"Arrived at Plot " + String(loc) + "\"";
-        FirebaseHTTP::put("robotArm/lastAction", action);
-        Serial.printf("[Main] Robot arrived at plot %d, Firebase updated.\n", loc);
+        FirebaseHTTP::put("robotArm/status/currentPlot", String(loc));
+        FirebaseHTTP::put("robotArm/status/state", String("\"idle\""));
+        String action;
+        if (loc == 0)
+            action = "\"Returned to Home\"";
+        else
+            action = "\"Arrived at Plot " + String(loc) + "\"";
+        FirebaseHTTP::put("robotArm/status/lastAction", action);
+        Serial.printf("[Main] Robot at %s, Firebase updated.\n", loc == 0 ? "Home" : ("plot " + String(loc)).c_str());
     }
 
-    // ===== Check controls less frequently (every 10 seconds) =====
+    // ===== Check controls less frequently (every 3 seconds) =====
     if (now - lastControlCheckMs >= controlCheckIntervalMs)
     {
         lastControlCheckMs = now;
 
-        // Only accept a new command when the arm is idle
-        if (RobotArm::isIdle())
+        // --- Stop command: handle even while arm is busy ---
+        String actionResp;
+        int gcode = FirebaseHTTP::get("robotArm/command/action", &actionResp);
+        if (gcode > 0 && actionResp.length() > 0)
         {
-            String resp;
-            int gcode = FirebaseHTTP::get("robotArm/status", &resp);
-            if (gcode > 0 && resp.length() > 0)
-            {
-                resp.trim();
-                if (resp.indexOf("\"") == 0)
-                    resp = resp.substring(1, resp.length() - 1);
+            actionResp.trim();
+            // Strip surrounding quotes if present
+            if (actionResp.startsWith("\"")) actionResp = actionResp.substring(1, actionResp.length() - 1);
 
-                if (resp == "moving")
+            if (actionResp == "stop")
+            {
+                bool stopped = RobotArm::stop();
+                FirebaseHTTP::put("robotArm/command/action", String("\"none\""));
+                if (stopped)
+                {
+                    FirebaseHTTP::put("robotArm/status/state", String("\"stopping\""));
+                    FirebaseHTTP::put("robotArm/status/lastAction", String("\"Stop command received\""));
+                    Serial.println("[Main] Stop dispatched.");
+                }
+            }
+            else if (RobotArm::isIdle())
+            {
+                // Move and Home commands only accepted when idle
+                if (actionResp == "move")
                 {
                     String tResp;
-                    if (FirebaseHTTP::get("robotArm/targetPlot", &tResp) > 0)
+                    if (FirebaseHTTP::get("robotArm/command/targetPlot", &tResp) > 0)
                     {
                         tResp.trim();
                         int target = tResp.toInt();
-                        Serial.printf("[Main] Command received: move to plot %d (current=%d)\n",
-                                      target, RobotArm::getCurrentLocation());
+                        Serial.printf("[Main] Command: move to plot %d\n", target);
 
                         bool dispatched = RobotArm::setTarget(target);
+                        FirebaseHTTP::put("robotArm/command/action", String("\"none\""));
 
                         if (dispatched)
                         {
-                            // Arm is now moving — acknowledge in Firebase immediately
-                            FirebaseHTTP::put("robotArm/status", String("\"moving\""));
-                            FirebaseHTTP::put("robotArm/commandTimestamp",
-                                              String((unsigned long)millis()));
+                            FirebaseHTTP::put("robotArm/status/state", String("\"moving\""));
+                            FirebaseHTTP::put("robotArm/status/lastAction",
+                                             "\"Moving to Plot " + String(target) + "\"");
+                            FirebaseHTTP::put("robotArm/command/timestamp", String((unsigned long)millis()));
                             Serial.printf("[Main] Arm dispatched to plot %d\n", target);
                         }
                         else
                         {
-                            // Already there or invalid — reset status so UI unlocks
-                            FirebaseHTTP::put("robotArm/status", String("\"idle\""));
-                            Serial.printf("[Main] Already at plot %d or invalid target — resetting status\n", target);
+                            FirebaseHTTP::put("robotArm/status/state", String("\"idle\""));
+                            Serial.printf("[Main] Already at plot %d or invalid — ignoring.\n", target);
                         }
+                    }
+                }
+                else if (actionResp == "home")
+                {
+                    bool dispatched = RobotArm::goHome();
+                    FirebaseHTTP::put("robotArm/command/action", String("\"none\""));
+
+                    if (dispatched)
+                    {
+                        FirebaseHTTP::put("robotArm/status/state", String("\"moving\""));
+                        FirebaseHTTP::put("robotArm/status/lastAction", String("\"Returning Home\""));
+                        Serial.println("[Main] Arm dispatched home.");
+                    }
+                    else
+                    {
+                        FirebaseHTTP::put("robotArm/status/state", String("\"idle\""));
+                        Serial.println("[Main] Already home — ignoring.");
                     }
                 }
             }
         }
     }
 
-    // ===== Poll humidifier mode from Firebase (every 1 second) =====
-    pollHumidifierMode();
+    // ===== Poll humidifier mode from Firebase — skip during servo phases =====
+    if (!armInServoPhase)
+        pollHumidifierMode();
 
     delay(10);
 }

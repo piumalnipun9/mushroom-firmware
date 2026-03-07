@@ -2,22 +2,26 @@
 #include <Arduino.h>
 
 namespace Actuators {
-  // Initialize actuators (configure humidifier interrupt)
+
+  // Initialise the humidifier pin as OUTPUT (LOW = off)
   void begin();
 
-  // Humidifier state machine: OFF -> SLOW -> FAST -> OFF (cycles on falling edges)
-  enum HumidifierMode {
-    MODE_OFF = 0,
-    MODE_SLOW = 1,
-    MODE_FAST = 2
-  };
+  // Send 3 rising-edge pulses (1 s apart) to turn the module ON — non-blocking
+  void turnOn();
 
-  // Get current humidifier mode
-  HumidifierMode getHumidifierMode();
-  
-  // Set humidifier mode directly
-  void setHumidifierMode(HumidifierMode mode);
+  // Send 1 rising-edge pulse to turn the module OFF — non-blocking
+  void turnOff();
 
-  // Simple stubs (kept minimal)
+  // True while pulses are still being sent (do not accept new commands yet)
+  bool isBusy();
+
+  // True once all pulses for an ON command have completed
+  bool isOn();
+
+  // Call every loop() — drives the non-blocking pulse state machine
+  void update();
+
+  // Simple stub
   void setExhaustFan(bool on);
-}
+
+} // namespace Actuators

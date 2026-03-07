@@ -34,11 +34,21 @@ export interface MLModelInfo {
   description: string;
 }
 
-export interface RobotArmPosition {
-  currentPlot: number;
-  status: 'idle' | 'moving' | 'operating';
+export interface RobotArmStatus {
+  state: 'idle' | 'moving' | 'homing' | 'stopping';
+  currentPlot: number;   // 0 = home, 1–4 = plots
   lastAction: string;
 }
+
+export interface RobotArmCommand {
+  action: 'none' | 'move' | 'home' | 'stop';
+  targetPlot?: number;
+  timestamp?: number;
+}
+
+// Keep for legacy references during transitional period
+export type RobotArmPosition = RobotArmStatus;
+
 
 export interface LightControl {
   intensity: number;

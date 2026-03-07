@@ -12,9 +12,8 @@ import {
 } from '@mui/material';
 import LightModeIcon from '@mui/icons-material/LightMode';
 import WaterDropIcon from '@mui/icons-material/WaterDrop';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import { 
-  updateLightControl, 
+import {
+  updateLightControl,
   subscribeLightControl,
   subscribeHumidifierControl,
   updateHumidifierMode,
@@ -73,25 +72,13 @@ const HumidifierAndLightControl: React.FC = () => {
     await updateLightControl({ status: event.target.checked ? 'on' : 'off' });
   };
 
-  const getHumidifierColor = () => {
-    switch (humidifierMode) {
-      case 'FAST':
-        return '#ef4444';
-      case 'SLOW':
-        return '#f59e0b';
-      case 'OFF':
-      default:
-        return '#9ca3af';
-    }
-  };
+  const humidifierIsOn = humidifierMode === 'ON';
+  const humidifierColor = humidifierIsOn ? '#4ecdc4' : '#9ca3af';
 
-  const cycleHumidifierMode = async () => {
-    const modes: HumidifierMode[] = ['OFF', 'SLOW', 'FAST'];
-    const currentIndex = modes.indexOf(humidifierMode);
-    const nextMode = modes[(currentIndex + 1) % modes.length];
-    setHumidifierMode(nextMode);
-    await updateHumidifierMode(nextMode);
-    console.log(`Humidifier mode updated to: ${nextMode}`);
+  const handleHumidifierToggle = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const newMode: HumidifierMode = event.target.checked ? 'ON' : 'OFF';
+    setHumidifierMode(newMode);
+    await updateHumidifierMode(newMode);
   };
 
   return (
@@ -101,8 +88,8 @@ const HumidifierAndLightControl: React.FC = () => {
           <LightModeIcon sx={{ fontSize: 40, color: '#fbbf24' }} />
           <WaterDropIcon sx={{ fontSize: 40, color: '#4ecdc4' }} />
         </Box>
-        <Typography 
-          variant="h4" 
+        <Typography
+          variant="h4"
           color="text.primary"
           sx={{ fontWeight: 700 }}
         >
@@ -198,7 +185,7 @@ const HumidifierAndLightControl: React.FC = () => {
             }}
           />
           <Typography variant="body2" color="text.secondary">
-            {isAutoLight 
+            {isAutoLight
               ? 'Auto mode enabled - ML model controls light based on fruiting conditions'
               : 'Manual mode - adjust intensity using the slider above'
             }
@@ -214,63 +201,55 @@ const HumidifierAndLightControl: React.FC = () => {
         </Typography>
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, mb: 3 }}>
+          {/* Status indicator */}
           <Box
             sx={{
               width: 80,
               height: 80,
               borderRadius: '50%',
-              backgroundColor: `${getHumidifierColor()}20`,
+              backgroundColor: `${humidifierColor}20`,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              border: `3px solid ${getHumidifierColor()}`,
-              boxShadow: `0 0 20px ${getHumidifierColor()}40`,
-              transition: 'all 0.3s ease'
+              border: `3px solid ${humidifierColor}`,
+              boxShadow: humidifierIsOn ? `0 0 20px ${humidifierColor}60` : 'none',
+              transition: 'all 0.4s ease'
             }}
           >
-            <Typography 
-              variant="h5" 
-              sx={{ 
-                fontWeight: 700, 
-                color: getHumidifierColor(),
-                textAlign: 'center'
-              }}
-            >
-              {humidifierMode}
-            </Typography>
+            <WaterDropIcon sx={{ fontSize: 36, color: humidifierColor, transition: 'color 0.4s ease' }} />
           </Box>
 
+          {/* Toggle */}
           <Box sx={{ flex: 1 }}>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Current Mode: <strong>{humidifierMode}</strong>
+            <Typography variant="body1" color="text.secondary" sx={{ mb: 1 }}>
+              Status: <strong style={{ color: humidifierColor }}>{humidifierIsOn ? 'ON' : 'OFF'}</strong>
             </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-              Cycles: OFF → SLOW → FAST → OFF
-            </Typography>
-            <Button
-              variant="contained"
-              startIcon={<RefreshIcon />}
-              onClick={cycleHumidifierMode}
-              sx={{
-                backgroundColor: getHumidifierColor(),
-                '&:hover': {
-                  backgroundColor: getHumidifierColor(),
-                  filter: 'brightness(0.9)'
-                }
-              }}
-            >
-              Cycle Mode
-            </Button>
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={humidifierIsOn}
+                  onChange={handleHumidifierToggle}
+                  sx={{
+                    '& .MuiSwitch-switchBase.Mui-checked': { color: '#4ecdc4' },
+                    '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': { backgroundColor: '#4ecdc4' }
+                  }}
+                />
+              }
+              label={
+                <Typography color="text.secondary" sx={{ fontWeight: 500 }}>
+                  {humidifierIsOn ? 'Turn OFF' : 'Turn ON'}
+                </Typography>
+              }
+            />
           </Box>
         </Box>
 
-        <Divider sx={{ my: 3 }} />
+        <Divider sx={{ my: 2 }} />
 
-        <Box>
-          <Typography variant="body2" color="text.secondary">
-            <strong>How it works:</strong> The humidifier cycles through three states - OFF (no moisture), SLOW (gentle misting), and FAST (aggressive misting). Press "Cycle Mode" to advance to the next state, or trigger GPIO15 with a falling edge pulse to cycle automatically.
-          </Typography>
-        </Box>
+        <Typography variant="body2" color="text.secondary">
+          <strong>How it works:</strong> Sends rising-edge pulses to the module's internal state machine.
+          Turning <strong>ON</strong> sends 3 pulses (1 s apart); turning <strong>OFF</strong> sends 1 pulse.
+        </Typography>
       </Paper>
     </Box>
   );

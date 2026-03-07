@@ -85,7 +85,7 @@ const Layout: React.FC = () => {
     },
     {
       id: 'sensors',
-      label: 'Sensor Controls',
+      label: 'Light-Humidity Controls',
       icon: <SensorsIcon />,
       component: <SensorControls />
     }

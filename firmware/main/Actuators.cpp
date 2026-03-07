@@ -1,56 +1,66 @@
 
-// Humidifier state machine implementation
+// Humidifier control — continuous toggling module
+// ON = 5000ms LOW, then 5000ms HIGH, repeating
+// OFF = steady HIGH
 #include "Actuators.h"
 #include "Config.h"
 #include <Arduino.h>
 
 namespace Actuators
 {
-    // Current humidifier mode state
-    static HumidifierMode currentMode = MODE_OFF;
+    static const unsigned long PULSE_DURATION_MS = 5000;
 
-    // ISR for detecting falling edge on humidifier pin
-    static void IRAM_ATTR humidifierISR()
-    {
-        // Cycle through modes: OFF -> SLOW -> FAST -> OFF
-        currentMode = (HumidifierMode)((currentMode + 1) % 3);
-        Serial.printf("[Actuators] Humidifier mode changed to: ");
-        switch (currentMode)
-        {
-        case MODE_OFF:
-            Serial.println("OFF");
-            break;
-        case MODE_SLOW:
-            Serial.println("SLOW");
-            break;
-        case MODE_FAST:
-            Serial.println("FAST");
-            break;
-        }
-    }
+    static bool humidifierOn = false;
+    static bool phaseIsHigh = true;
+    static unsigned long phaseStartMs = 0;
 
     void begin()
     {
-        // Configure humidifier pin for input with internal pull-up
-        // Detect falling edges (LOW transitions)
-        pinMode(PIN_HUMIDIFIER, INPUT_PULLUP);
-        attachInterrupt(digitalPinToInterrupt(PIN_HUMIDIFIER), humidifierISR, FALLING);
-
-        currentMode = MODE_OFF;
-        Serial.printf("[Actuators] Humidifier initialized on pin %d (state machine)\n", PIN_HUMIDIFIER);
+        pinMode(PIN_HUMIDIFIER, OUTPUT);
+        digitalWrite(PIN_HUMIDIFIER, HIGH); // OFF state is HIGH
+        humidifierOn = false;
+        Serial.printf("[Actuators] Humidifier on pin %d — continuous toggle (ON=5s LOW/5s HIGH, OFF=HIGH)\n",
+                      PIN_HUMIDIFIER);
     }
 
-    HumidifierMode getHumidifierMode()
+    void turnOn()
     {
-        return currentMode;
+        if (humidifierOn)
+            return; // already on
+
+        humidifierOn = true;
+        phaseIsHigh = false; // Start with LOW phase
+        digitalWrite(PIN_HUMIDIFIER, LOW);
+        phaseStartMs = millis();
+        Serial.println("[Actuators] Humidifier turning ON (starting 5s LOW pulse)");
     }
 
-    void setHumidifierMode(HumidifierMode mode)
+    void turnOff()
     {
-        if (mode >= 0 && mode < 3)
+        if (!humidifierOn)
+            return; // already off
+
+        humidifierOn = false;
+        phaseIsHigh = true;
+        digitalWrite(PIN_HUMIDIFIER, HIGH); // Steady HIGH when OFF
+        Serial.println("[Actuators] Humidifier turning OFF (steady HIGH)");
+    }
+
+    bool isBusy() { return false; } // It continuously toggles, never blocks new commands
+    bool isOn() { return humidifierOn; }
+
+    void update()
+    {
+        if (!humidifierOn)
+            return; // Nothing to do if OFF
+
+        unsigned long elapsed = millis() - phaseStartMs;
+
+        if (elapsed >= PULSE_DURATION_MS)
         {
-            currentMode = mode;
-            Serial.printf("[Actuators] Humidifier mode set to: %d\n", mode);
+            phaseIsHigh = !phaseIsHigh;
+            digitalWrite(PIN_HUMIDIFIER, phaseIsHigh ? HIGH : LOW);
+            phaseStartMs = millis();
         }
     }
 

@@ -4,7 +4,8 @@ import {
   SensorData,
   CurrentSensorValues,
   MLModelInfo,
-  RobotArmPosition,
+  RobotArmStatus,
+  RobotArmCommand,
   LightControl,
   Alert
 } from '../types';
@@ -82,34 +83,38 @@ export const updateMLModelPredictions = async (predictions: MLModelInfo['predict
 };
 
 // Robot Arm Services
-export const subscribeRobotArmPosition = (
-  callback: (data: RobotArmPosition | null) => void
+// UI reads firmware state from robotArm/status/
+export const subscribeRobotArmStatus = (
+  callback: (data: RobotArmStatus | null) => void
 ) => {
-  const robotRef = ref(database, 'robotArm');
+  const robotRef = ref(database, 'robotArm/status');
   return onValue(robotRef, (snapshot: DataSnapshot) => {
     callback(snapshot.val());
   });
 };
 
-export const moveRobotToPlot = async (plotId: number) => {
-  const robotRef = ref(database, 'robotArm');
-  await update(robotRef, {
-    targetPlot: plotId,
-    status: 'moving',
-    lastAction: `Moving to plot ${plotId}`,
-    commandTimestamp: Date.now()
+// UI sends commands to robotArm/command/ only; firmware reads + clears
+export const sendRobotCommand = async (
+  action: RobotArmCommand['action'],
+  targetPlot?: number
+) => {
+  const cmdRef = ref(database, 'robotArm/command');
+  await update(cmdRef, {
+    action,
+    ...(targetPlot !== undefined ? { targetPlot } : {}),
+    timestamp: Date.now()
   });
 };
 
-export const updateRobotStatus = async (status: 'idle' | 'moving' | 'operating') => {
-  const statusRef = ref(database, 'robotArm/status');
-  await set(statusRef, status);
-};
+// Legacy alias — kept so other components don't break immediately
+export const subscribeRobotArmPosition = subscribeRobotArmStatus;
+export const moveRobotToPlot = (plotId: number) => sendRobotCommand('move', plotId);
+export const updateRobotStatus = (_status: string) => sendRobotCommand('stop');
 
 
 
 // Humidifier Control Services
-export type HumidifierMode = 'OFF' | 'SLOW' | 'FAST';
+export type HumidifierMode = 'ON' | 'OFF';
 
 export interface HumidifierControl {
   mode: HumidifierMode;

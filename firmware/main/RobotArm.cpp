@@ -36,6 +36,7 @@ namespace RobotArm
 
     static long currentSteps = 0;
     static long targetSteps = 0;
+    static bool abortRequested = false; // set by stop() to break stepper loop early
 
     static Servo servo1, servo2;
     static int svCurrent1, svCurrent2; // current microseconds
@@ -56,45 +57,56 @@ namespace RobotArm
         svMoveStart = millis();
     }
 
-    // Returns true when both servo phases are complete
+    // Returns true when both servo phases are complete (now blocking)
     static bool tickServoMove()
     {
-        unsigned long elapsed = millis() - svMoveStart;
+        int updateInterval = 2; // fast update interval
 
-        if (svPhase == 0)
+        // ── Phase 0: move servo 2 to target ──────────────────────────────
+        int diff2 = abs(svEnd2 - svStart2);
+        if (diff2 > 0)
         {
-            // ── Phase 0: move servo 2 to target ──────────────────────────────
-            if (elapsed >= (unsigned long)SERVO_MOVE_MS)
+            float totalTimeMs2 = (diff2 / SERVO_SPEED_US_PER_S) * 1000.0;
+            int steps2 = totalTimeMs2 / updateInterval;
+            if (steps2 < 1) steps2 = 1;
+            
+            float inc2 = (float)(svEnd2 - svStart2) / steps2;
+            
+            // Hold servo 1 steady
+            servo1.writeMicroseconds(svCurrent1); 
+            
+            for (int i = 0; i <= steps2; i++)
             {
-                svCurrent2 = svEnd2;
+                svCurrent2 = svStart2 + (int)(inc2 * i);
                 servo2.writeMicroseconds(svCurrent2);
-                servo1.writeMicroseconds(svCurrent1); // servo 1 holds position
-                // Transition to phase 1
-                svPhase = 1;
-                svMoveStart = millis();
-                return false;
+                delay(updateInterval); // Use delay to keep timing precise and let WiFi breathe smoothly
             }
-            float t = (float)elapsed / SERVO_MOVE_MS;
-            svCurrent2 = svStart2 + (int)((svEnd2 - svStart2) * t);
-            servo2.writeMicroseconds(svCurrent2);
-            servo1.writeMicroseconds(svCurrent1); // servo 1 holds
         }
-        else
+        svCurrent2 = svEnd2;
+
+        // ── Phase 1: move servo 1 to target ──────────────────────────────
+        int diff1 = abs(svEnd1 - svStart1);
+        if (diff1 > 0)
         {
-            // ── Phase 1: move servo 1 to target ──────────────────────────────
-            if (elapsed >= (unsigned long)SERVO_MOVE_MS)
+            float totalTimeMs1 = (diff1 / SERVO_SPEED_US_PER_S) * 1000.0;
+            int steps1 = totalTimeMs1 / updateInterval;
+            if (steps1 < 1) steps1 = 1;
+            
+            float inc1 = (float)(svEnd1 - svStart1) / steps1;
+            
+            // Hold servo 2 steady
+            servo2.writeMicroseconds(svCurrent2); 
+            
+            for (int i = 0; i <= steps1; i++)
             {
-                svCurrent1 = svEnd1;
+                svCurrent1 = svStart1 + (int)(inc1 * i);
                 servo1.writeMicroseconds(svCurrent1);
-                servo2.writeMicroseconds(svCurrent2); // servo 2 stays at end
-                return true; // Both phases done
+                delay(updateInterval); // Use delay to keep timing precise and let WiFi breathe smoothly
             }
-            float t = (float)elapsed / SERVO_MOVE_MS;
-            svCurrent1 = svStart1 + (int)((svEnd1 - svStart1) * t);
-            servo1.writeMicroseconds(svCurrent1);
-            servo2.writeMicroseconds(svCurrent2); // servo 2 stays at end
         }
-        return false;
+        svCurrent1 = svEnd1;
+
+        return true; // Both phases done
     }
 
     // ─── Stepper homing (blocking — called once in begin()) ──────────────────
@@ -188,7 +200,15 @@ namespace RobotArm
                 }
                 else
                 {
-                    // Move stepper (blocking, yields to WiFi/WDT every 200 steps)
+                    // goHome() sets targetLocation=0; regular moves set 1–4
+                    if (targetLocation == 0)
+                    {
+                        // Hand off to STATE_HOMING_STEPPER (drives stepper to position 0)
+                        state = STATE_HOMING_STEPPER;
+                        break;
+                    }
+
+                    // Normal plot move — run stepper to targetSteps inline
                     state = STATE_MOVING_STEPPER;
                     Serial.printf("[RobotArm] Moving stepper: %ld -> %ld\n",
                                   currentSteps, targetSteps);
@@ -209,16 +229,31 @@ namespace RobotArm
                         else
                             currentSteps--;
 
-                        // Yield every 200 steps to keep WiFi stack and WDT alive
+                        // Yield every 200 steps and check for abort
                         if (++stepsDone % 200 == 0)
+                        {
                             yield();
+                            if (abortRequested)
+                                break;
+                        }
                     }
 
-                    Serial.printf("[RobotArm] Stepper done at %ld steps. Deploying arms.\n",
-                                  currentSteps);
-                    // Deploy arms to final position
-                    startServoMove(servo1UsFor(targetLocation), servo2UsFor(targetLocation));
-                    state = STATE_MOVING_TO_TARGET_ARM;
+                    if (abortRequested)
+                    {
+                        // Abort: retract arms to neutral and go idle
+                        abortRequested = false;
+                        Serial.println("[RobotArm] Abort! Retracting arms.");
+                        startServoMove(SERVO_CENTER_US, SERVO_CENTER_US);
+                        state = STATE_STOPPING;
+                    }
+                    else
+                    {
+                        Serial.printf("[RobotArm] Stepper done at %ld steps. Deploying arms.\n",
+                                      currentSteps);
+                        // Deploy arms to final position
+                        startServoMove(servo1UsFor(targetLocation), servo2UsFor(targetLocation));
+                        state = STATE_MOVING_TO_TARGET_ARM;
+                    }
                 }
             }
             break;
@@ -240,12 +275,104 @@ namespace RobotArm
             }
             break;
         }
+
+        // ── 3. Abort: retract to neutral then idle ─────────────────────────────
+        case STATE_STOPPING:
+        {
+            if (tickServoMove())
+            {
+                justArrived = true; // triggers Firebase update in main.ino
+                state = STATE_IDLE;
+                Serial.println("[RobotArm] Stopped. Arms retracted to neutral.");
+            }
+            break;
+        }
+
+        // ── 4. Go home: stepper drives to 0, servos stay at centre ────────────
+        case STATE_HOMING_STEPPER:
+        {
+            // This runs inline (blocking) similar to STATE_MOVING_STEPPER
+            Serial.printf("[RobotArm] Homing stepper: %ld -> 0\n", currentSteps);
+            digitalWrite(DIR_PIN, currentSteps > 0 ? HIGH : LOW);
+            delayMicroseconds(10);
+
+            long stepsDone = 0;
+            while (currentSteps != 0)
+            {
+                digitalWrite(STEP_PIN, HIGH);
+                delayMicroseconds(STEP_INTERVAL_US);
+                digitalWrite(STEP_PIN, LOW);
+                delayMicroseconds(STEP_INTERVAL_US);
+                currentSteps > 0 ? currentSteps-- : currentSteps++;
+
+                if (++stepsDone % 200 == 0)
+                {
+                    yield();
+                    if (abortRequested)
+                        break;
+                }
+            }
+
+            abortRequested = false;
+            currentLocation = 0;
+            justArrived = true;
+            state = STATE_IDLE;
+            Serial.println("[RobotArm] Stepper homed to 0. At Home.");
+            break;
+        }
         }
     }
 
     State getState() { return state; }
     int getCurrentLocation() { return currentLocation; }
     bool isIdle() { return state == STATE_IDLE; }
+    bool isStopping() { return state == STATE_STOPPING; }
+
+    bool stop()
+    {
+        if (state == STATE_IDLE)
+            return false; // nothing to stop
+
+        if (state == STATE_MOVING_STEPPER ||
+            state == STATE_MOVING_TO_IDLE_ARM ||
+            state == STATE_MOVING_TO_TARGET_ARM)
+        {
+            // Signal the stepper loop to break, or let the current servo
+            // phase complete naturally — both paths land in STATE_STOPPING.
+            abortRequested = true;
+
+            // If we're in a servo phase, skip straight to stopping state
+            // so the servo phase completes and then we go idle safely.
+            if (state != STATE_MOVING_STEPPER)
+            {
+                // Overwrite pending servo target with neutral (retract)
+                svEnd1 = SERVO_CENTER_US;
+                svEnd2 = SERVO_CENTER_US;
+                state = STATE_STOPPING;
+            }
+            Serial.println("[RobotArm] Stop requested.");
+            return true;
+        }
+        return false;
+    }
+
+    bool goHome()
+    {
+        if (state != STATE_IDLE)
+            return false; // busy
+        if (currentLocation == 0)
+            return false; // already home
+
+        // Step 1: retract servos to neutral
+        startServoMove(SERVO_CENTER_US, SERVO_CENTER_US);
+        state = STATE_MOVING_TO_IDLE_ARM;
+        // After retract completes, update() will see currentSteps != 0
+        // and enter STATE_HOMING_STEPPER (targetSteps = 0 is set below)
+        targetSteps = 0;
+        targetLocation = 0; // mark we're heading home
+        Serial.println("[RobotArm] Go Home dispatched.");
+        return true;
+    }
 
     bool checkAndClearArrival()
     {

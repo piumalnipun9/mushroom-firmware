@@ -11,13 +11,13 @@ namespace RobotArm {
 
   // Per-servo offset from centre (µs)
   //   Servo 1: A-side = center + 100 = 1600 µs  |  B-side = center - 100 = 1400 µs
-  constexpr int  SERVO1_OFFSET_US    = 100;
+  constexpr int  SERVO1_OFFSET_US    = 300;
   //   Servo 2: A-side = center + 500 = 2000 µs  |  B-side = center - 500 = 1000 µs
-  constexpr int  SERVO2_OFFSET_US    = 500;
+  constexpr int  SERVO2_OFFSET_US    = 1100;
 
   // Derived µs values — do not edit
-  constexpr int  SERVO1_US_A         = SERVO_CENTER_US + SERVO1_OFFSET_US;  // 1600 µs — Locations 1 & 3
-  constexpr int  SERVO1_US_B         = SERVO_CENTER_US - SERVO1_OFFSET_US;  // 1400 µs — Locations 2 & 4
+  constexpr int  SERVO1_US_A         = SERVO_CENTER_US - SERVO1_OFFSET_US;  // 1600 µs — Locations 1 & 3
+  constexpr int  SERVO1_US_B         = SERVO_CENTER_US + SERVO1_OFFSET_US;  // 1400 µs — Locations 2 & 4
   constexpr int  SERVO2_US_A         = SERVO_CENTER_US + SERVO2_OFFSET_US;  // 2000 µs — Locations 1 & 3
   constexpr int  SERVO2_US_B         = SERVO_CENTER_US - SERVO2_OFFSET_US;  // 1000 µs — Locations 2 & 4
 
@@ -25,8 +25,9 @@ namespace RobotArm {
   constexpr long STEPPER_POS_NEAR    = 10000;  // Locations 1 & 2
   constexpr long STEPPER_POS_FAR     = 50000;  // Locations 3 & 4
 
-  // Servo smooth-move duration per phase (ms) — servo 2 moves first, then servo 1
-  constexpr int  SERVO_MOVE_MS       = 800;
+  // Servo movement speed (microseconds of pulse width change per second)
+  // Higher value = faster. 250 µs/s means a 1000µs move takes 4 seconds.
+  constexpr float SERVO_SPEED_US_PER_S = 2000.0;
 
   // Stepper pulse interval (µs between pulses — lower = faster)
   constexpr unsigned int STEP_INTERVAL_US = 800;
@@ -36,15 +37,20 @@ namespace RobotArm {
     STATE_IDLE,
     STATE_MOVING_TO_IDLE_ARM,
     STATE_MOVING_STEPPER,
-    STATE_MOVING_TO_TARGET_ARM
+    STATE_MOVING_TO_TARGET_ARM,
+    STATE_STOPPING,          // abort requested — retracting arms then going idle
+    STATE_HOMING_STEPPER     // goHome: driving stepper back to position 0
   };
 
   void  begin();                 // Home stepper at startup (blocking)
   bool  setTarget(int location); // Returns true=dispatched, false=ignored (busy/already there)
+  bool  goHome();                // Retract servos, drive stepper to 0, set currentLocation=0
+  bool  stop();                  // Abort current move; safe servo retract then idle
   void  update();                // Call every loop tick — runs the state machine
   State getState();
   int   getCurrentLocation();
   bool  isIdle();
+  bool  isStopping();
   bool  checkAndClearArrival();  // Returns true once after each completed move
 
 } // namespace RobotArm
