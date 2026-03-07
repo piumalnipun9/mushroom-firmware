@@ -9,6 +9,9 @@
 // States: OFF -> SLOW -> FAST -> OFF (cycles on each falling edge)
 #define PIN_HUMIDIFIER 15
 
+// Physical Emergency Stop Button
+#define PIN_STOP_BUTTON 26
+
 // ============================================
 // ENS160-AHT21 Air Quality + Temp/Humidity Sensor (I2C)
 // Uses standard I2C pins - shared with other I2C devices

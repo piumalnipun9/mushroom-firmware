@@ -39,6 +39,22 @@ namespace RobotArm
     static bool abortRequested = false; // set by stop() to break stepper loop early
     static AbortPollFn abortPollFn = nullptr; // optional callback polled during stepper move
 
+    // Hardware Emergency Pause Button
+    static volatile bool motionPaused = false;
+    static volatile unsigned long lastInterruptTime = 0;
+
+    // ISR for physical stop button (GPIO26)
+    // Toggles pause/resume state with 200ms debounce
+    void IRAM_ATTR stopButtonISR()
+    {
+        unsigned long interruptTime = millis();
+        if (interruptTime - lastInterruptTime > 200)
+        {
+            motionPaused = !motionPaused;
+            lastInterruptTime = interruptTime;
+        }
+    }
+
     static Servo servo1, servo2;
     static int svCurrent1, svCurrent2; // current microseconds
     static int svStart1, svStart2;
@@ -78,6 +94,13 @@ namespace RobotArm
             
             for (int i = 0; i <= steps2; i++)
             {
+                // Pause handling
+                while (motionPaused)
+                {
+                    delay(10);
+                    yield();
+                }
+
                 svCurrent2 = svStart2 + (int)(inc2 * i);
                 servo2.writeMicroseconds(svCurrent2);
                 delay(updateInterval); // Use delay to keep timing precise and let WiFi breathe smoothly
@@ -100,6 +123,13 @@ namespace RobotArm
             
             for (int i = 0; i <= steps1; i++)
             {
+                // Pause handling
+                while (motionPaused)
+                {
+                    delay(10);
+                    yield();
+                }
+
                 svCurrent1 = svStart1 + (int)(inc1 * i);
                 servo1.writeMicroseconds(svCurrent1);
                 delay(updateInterval); // Use delay to keep timing precise and let WiFi breathe smoothly
@@ -144,6 +174,9 @@ namespace RobotArm
         pinMode(STEP_PIN, OUTPUT);
         pinMode(DIR_PIN, OUTPUT);
         pinMode(LIMIT_SWITCH, INPUT_PULLUP);
+        pinMode(PIN_STOP_BUTTON, INPUT_PULLUP);
+
+        attachInterrupt(digitalPinToInterrupt(PIN_STOP_BUTTON), stopButtonISR, FALLING);
 
         servo1.attach(SERVO1_PIN);
         servo2.attach(SERVO2_PIN);
@@ -238,6 +271,13 @@ namespace RobotArm
                             if (abortRequested)
                                 break;
                         }
+
+                        // Pause handling
+                        while (motionPaused)
+                        {
+                            delay(10);
+                            yield();
+                        }
                     }
 
                     if (abortRequested)
@@ -312,6 +352,13 @@ namespace RobotArm
                     yield();
                     if (abortRequested)
                         break;
+                }
+
+                // Pause handling
+                while (motionPaused)
+                {
+                    delay(10);
+                    yield();
                 }
             }
 

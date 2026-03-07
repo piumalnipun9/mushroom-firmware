@@ -29,25 +29,6 @@ const unsigned long historyIntervalMs = 60000;       // History every 60 sec (re
 const unsigned long controlCheckIntervalMs = 1000;   // Check controls every 1 sec
 const unsigned long humidifierPollIntervalMs = 1000; // Poll humidifier mode every 1 sec
 
-// Called every ~200 stepper steps (inside RobotArm's blocking stepper loop).
-// Does a Firebase GET to check if a stop command was sent while the stepper is running.
-void pollStopCommand()
-{
-    String resp;
-    if (FirebaseHTTP::get("robotArm/command/action", &resp) > 0)
-    {
-        resp.trim();
-        if (resp.startsWith("\"")) resp = resp.substring(1, resp.length() - 1);
-        if (resp == "stop")
-        {
-            FirebaseHTTP::put("robotArm/command/action", String("\"none\"")); // clear immediately
-            FirebaseHTTP::put("robotArm/status/state", String("\"stopping\""));
-            FirebaseHTTP::put("robotArm/status/lastAction", String("\"Stop command received\""));
-            RobotArm::stop();
-            Serial.println("[Main] Mid-stepper stop detected and dispatched.");
-        }
-    }
-}
 
 void setup()
 {
@@ -55,9 +36,6 @@ void setup()
 
     WiFiManagerMod::begin(WIFI_SSID, WIFI_PASSWORD);
     FirebaseHTTP::begin(FIREBASE_HOST, FIREBASE_SECRET);
-
-    // Register the stepper-move stop-poll callback
-    RobotArm::setAbortPollFn(pollStopCommand);
 
     Sensors::begin();
     Actuators::begin();
@@ -281,18 +259,7 @@ void loop()
             // Strip surrounding quotes if present
             if (actionResp.startsWith("\"")) actionResp = actionResp.substring(1, actionResp.length() - 1);
 
-            if (actionResp == "stop")
-            {
-                bool stopped = RobotArm::stop();
-                FirebaseHTTP::put("robotArm/command/action", String("\"none\""));
-                if (stopped)
-                {
-                    FirebaseHTTP::put("robotArm/status/state", String("\"stopping\""));
-                    FirebaseHTTP::put("robotArm/status/lastAction", String("\"Stop command received\""));
-                    Serial.println("[Main] Stop dispatched.");
-                }
-            }
-            else if (RobotArm::isIdle())
+            if (RobotArm::isIdle())
             {
                 // Move and Home commands only accepted when idle
                 if (actionResp == "move")

@@ -16,7 +16,6 @@ import {
 import PrecisionManufacturingIcon from '@mui/icons-material/PrecisionManufacturing';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import StopIcon from '@mui/icons-material/Stop';
 import HomeIcon from '@mui/icons-material/Home';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import { RobotArmStatus } from '../../types';
@@ -45,7 +44,7 @@ const RobotArmControl: React.FC = () => {
     { id: 4, name: 'Plot 4', status: 'active' },
   ]);
   const [selectedPlot, setSelectedPlot] = useState<number>(1);
-  const isMoving = robotStatus.state === 'moving' || robotStatus.state === 'stopping';
+  const isMoving = robotStatus.state === 'moving' || robotStatus.state === 'homing';
 
   useEffect(() => {
     const unsub = subscribeRobotArmStatus((data) => {
@@ -72,15 +71,12 @@ const RobotArmControl: React.FC = () => {
     await sendRobotCommand('home');
   };
 
-  const handleStop = async () => {
-    await sendRobotCommand('stop');
-  };
+
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'idle': return '#4caf50';
       case 'moving': return '#ff9800';
-      case 'stopping': return '#f44336';
       case 'homing': return '#9c27b0';
       default: return '#9e9e9e';
     }
@@ -243,111 +239,102 @@ const RobotArmControl: React.FC = () => {
               </Button>
             </Box>
 
-            <Button
-              variant="contained"
-              size="large"
-              startIcon={isMoving ? <CircularProgress size={20} color="inherit" /> : <StopIcon />}
-              onClick={handleStop}
-              disabled={robotStatus.state === 'idle'}
-              color="error"
-            >
-              {robotStatus.state === 'stopping' ? 'Stopping...' : 'Stop'}
-            </Button>
           </Box>
-        </Paper>
+      </Box>
+    </Paper>
 
-        {/* Plot Grid Visualization */}
-        <Paper elevation={2} sx={{ p: 3, borderRadius: 2, gridColumn: { xs: '1', lg: '1 / -1' } }}>
-          <Typography variant="h6" color="text.primary" sx={{ fontWeight: 600, mb: 3 }}>
-            Plot Overview
-          </Typography>
+        {/* Plot Grid Visualization */ }
+  <Paper elevation={2} sx={{ p: 3, borderRadius: 2, gridColumn: { xs: '1', lg: '1 / -1' } }}>
+    <Typography variant="h6" color="text.primary" sx={{ fontWeight: 600, mb: 3 }}>
+      Plot Overview
+    </Typography>
 
-          <Box
+    <Box
+      sx={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(2, 1fr)',
+        gap: 2
+      }}
+    >
+      {plots.map((plot) => (
+        <Paper
+          key={plot.id}
+          variant="outlined"
+          onClick={() => {
+            // Home (id=0) is display-only; use Go Home button
+            if (plot.status === 'active' && !isMoving && plot.id !== 0) {
+              setSelectedPlot(plot.id);
+            }
+          }}
+          sx={{
+            p: 2,
+            backgroundColor:
+              robotStatus.currentPlot === plot.id
+                ? 'success.main'
+                : selectedPlot === plot.id
+                  ? 'primary.main'
+                  : 'action.hover',
+            opacity: plot.status === 'inactive' ? 0.5 : 1,
+            borderColor:
+              robotStatus.currentPlot === plot.id
+                ? 'success.main'
+                : selectedPlot === plot.id
+                  ? 'primary.main'
+                  : 'divider',
+            borderWidth: 2,
+            borderRadius: 2,
+            cursor: plot.status === 'active' && !isMoving && plot.id !== 0 ? 'pointer' : 'default',
+            transition: 'all 0.2s',
+            '&:hover': plot.status === 'active' && !isMoving && plot.id !== 0 ? {
+              transform: 'scale(1.02)'
+            } : {}
+          }}
+        >
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography
+              variant="h6"
+              sx={{
+                fontWeight: 600,
+                color: robotStatus.currentPlot === plot.id || selectedPlot === plot.id ? 'white' : 'text.primary'
+              }}
+            >
+              {plot.name}
+            </Typography>
+            {robotStatus.currentPlot === plot.id && (
+              <PrecisionManufacturingIcon sx={{ color: 'white' }} />
+            )}
+          </Box>
+          <Typography
+            variant="caption"
             sx={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(2, 1fr)',
-              gap: 2
+              color: robotStatus.currentPlot === plot.id || selectedPlot === plot.id ? 'rgba(255,255,255,0.8)' : 'text.secondary'
             }}
           >
-            {plots.map((plot) => (
-              <Paper
-                key={plot.id}
-                variant="outlined"
-                onClick={() => {
-                  // Home (id=0) is display-only; use Go Home button
-                  if (plot.status === 'active' && !isMoving && plot.id !== 0) {
-                    setSelectedPlot(plot.id);
-                  }
-                }}
-                sx={{
-                  p: 2,
-                  backgroundColor:
-                    robotStatus.currentPlot === plot.id
-                      ? 'success.main'
-                      : selectedPlot === plot.id
-                        ? 'primary.main'
-                        : 'action.hover',
-                  opacity: plot.status === 'inactive' ? 0.5 : 1,
-                  borderColor:
-                    robotStatus.currentPlot === plot.id
-                      ? 'success.main'
-                      : selectedPlot === plot.id
-                        ? 'primary.main'
-                        : 'divider',
-                  borderWidth: 2,
-                  borderRadius: 2,
-                  cursor: plot.status === 'active' && !isMoving && plot.id !== 0 ? 'pointer' : 'default',
-                  transition: 'all 0.2s',
-                  '&:hover': plot.status === 'active' && !isMoving && plot.id !== 0 ? {
-                    transform: 'scale(1.02)'
-                  } : {}
-                }}
-              >
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <Typography
-                    variant="h6"
-                    sx={{
-                      fontWeight: 600,
-                      color: robotStatus.currentPlot === plot.id || selectedPlot === plot.id ? 'white' : 'text.primary'
-                    }}
-                  >
-                    {plot.name}
-                  </Typography>
-                  {robotStatus.currentPlot === plot.id && (
-                    <PrecisionManufacturingIcon sx={{ color: 'white' }} />
-                  )}
-                </Box>
-                <Typography
-                  variant="caption"
-                  sx={{
-                    color: robotStatus.currentPlot === plot.id || selectedPlot === plot.id ? 'rgba(255,255,255,0.8)' : 'text.secondary'
-                  }}
-                >
-                  {plot.status === 'inactive' ? 'Inactive' : 'Active'}
-                </Typography>
-              </Paper>
-            ))}
-          </Box>
-
-          <Divider sx={{ my: 3 }} />
-
-          <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Box sx={{ width: 16, height: 16, borderRadius: 1, bgcolor: 'success.main' }} />
-              <Typography variant="body2" color="text.secondary">Current Position</Typography>
-            </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Box sx={{ width: 16, height: 16, borderRadius: 1, bgcolor: 'primary.main' }} />
-              <Typography variant="body2" color="text.secondary">Selected Target</Typography>
-            </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Box sx={{ width: 16, height: 16, borderRadius: 1, bgcolor: 'action.disabled' }} />
-              <Typography variant="body2" color="text.secondary">Inactive Plot</Typography>
-            </Box>
-          </Box>
+            {plot.status === 'inactive' ? 'Inactive' : 'Active'}
+          </Typography>
         </Paper>
+      ))}
+    </Box>
+
+    <Divider sx={{ my: 3 }} />
+
+    <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Box sx={{ width: 16, height: 16, borderRadius: 1, bgcolor: 'success.main' }} />
+        <Typography variant="body2" color="text.secondary">Current Position</Typography>
+      </Box>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Box sx={{ width: 16, height: 16, borderRadius: 1, bgcolor: 'primary.main' }} />
+        <Typography variant="body2" color="text.secondary">Selected Target</Typography>
+      </Box>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Box sx={{ width: 16, height: 16, borderRadius: 1, bgcolor: 'action.disabled' }} />
+        <Typography variant="body2" color="text.secondary">Inactive Plot</Typography>
       </Box>
     </Box>
+  </Paper>
+      </Box >
+    </Box >
   );
 };
 
