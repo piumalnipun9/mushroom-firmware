@@ -8,6 +8,7 @@
 #include "Sensors.h"
 #include "Actuators.h"
 #include "RobotArm.h"
+#include "SDLogger.h"
 
 // ---- Configuration: set these before upload ----
 const char *WIFI_SSID = "Pixel 6a";
@@ -25,19 +26,42 @@ unsigned long lastHumidifierPollMs = 0;
 
 const unsigned long sendIntervalMs = 5000;           // Current values every 5 sec
 const unsigned long historyIntervalMs = 60000;       // History every 60 sec (reduce Firebase load)
-const unsigned long controlCheckIntervalMs = 3000;   // Check controls every 3 sec
+const unsigned long controlCheckIntervalMs = 1000;   // Check controls every 1 sec
 const unsigned long humidifierPollIntervalMs = 1000; // Poll humidifier mode every 1 sec
+
+// Called every ~200 stepper steps (inside RobotArm's blocking stepper loop).
+// Does a Firebase GET to check if a stop command was sent while the stepper is running.
+void pollStopCommand()
+{
+    String resp;
+    if (FirebaseHTTP::get("robotArm/command/action", &resp) > 0)
+    {
+        resp.trim();
+        if (resp.startsWith("\"")) resp = resp.substring(1, resp.length() - 1);
+        if (resp == "stop")
+        {
+            FirebaseHTTP::put("robotArm/command/action", String("\"none\"")); // clear immediately
+            FirebaseHTTP::put("robotArm/status/state", String("\"stopping\""));
+            FirebaseHTTP::put("robotArm/status/lastAction", String("\"Stop command received\""));
+            RobotArm::stop();
+            Serial.println("[Main] Mid-stepper stop detected and dispatched.");
+        }
+    }
+}
 
 void setup()
 {
     Serial.begin(9600);
-    delay(100);
 
     WiFiManagerMod::begin(WIFI_SSID, WIFI_PASSWORD);
     FirebaseHTTP::begin(FIREBASE_HOST, FIREBASE_SECRET);
 
+    // Register the stepper-move stop-poll callback
+    RobotArm::setAbortPollFn(pollStopCommand);
+
     Sensors::begin();
     Actuators::begin();
+    SDLogger::begin();  // Mount SD card — safe to continue even if card is absent
 
     // Write homing status BEFORE the blocking homing sequence so UI updates immediately
     FirebaseHTTP::put("robotArm/status/state", String("\"homing\""));
@@ -221,6 +245,26 @@ void loop()
             action = "\"Arrived at Plot " + String(loc) + "\"";
         FirebaseHTTP::put("robotArm/status/lastAction", action);
         Serial.printf("[Main] Robot at %s, Firebase updated.\n", loc == 0 ? "Home" : ("plot " + String(loc)).c_str());
+
+        // ===== SD card log — only when arm is at a real plot, not home =====
+        if (loc > 0)
+        {
+            // Read all sensors right now (arm is deployed, probe is in soil)
+            float temp  = Sensors::readTemperature();
+            float hum   = Sensors::readHumidity();
+            float co2   = Sensors::readCO2();
+            float moist = Sensors::readMoisture();
+            float ph    = Sensors::readPH();
+
+            // Build Unix timestamp: millis() will be ~seconds since boot;
+            // add a fixed epoch offset so the CSV has real wall-clock time.
+            // Adjust EPOCH_OFFSET_MS to current Unix time in ms when flashing.
+            const unsigned long long EPOCH_OFFSET_MS = 1741462052000ULL; // 2025-03-09 approx
+            unsigned long long unixMs = EPOCH_OFFSET_MS + (unsigned long long)millis();
+
+            SDLogger::logSensorReading(loc, (unsigned long)unixMs,
+                                       temp, hum, co2, moist, ph);
+        }
     }
 
     // ===== Check controls less frequently (every 3 seconds) =====
@@ -285,7 +329,7 @@ void loop()
 
                     if (dispatched)
                     {
-                        FirebaseHTTP::put("robotArm/status/state", String("\"moving\""));
+                        FirebaseHTTP::put("robotArm/status/state", String("\"homing\""));
                         FirebaseHTTP::put("robotArm/status/lastAction", String("\"Returning Home\""));
                         Serial.println("[Main] Arm dispatched home.");
                     }

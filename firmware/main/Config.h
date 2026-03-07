@@ -54,4 +54,13 @@
 // - RE (Receiver Enable) <- GPIO33
 // - DE (Driver Enable) <- GPIO25
 
+
+// ============================================
+// SD Card (SPI)
+// ============================================
+#define PIN_SD_MISO 13
+#define PIN_SD_MOSI 12
+#define PIN_SD_SCK  14
+#define PIN_SD_CS   27
+
 #endif // MUSHROOM_CONFIG_H

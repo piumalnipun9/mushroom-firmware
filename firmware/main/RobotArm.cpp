@@ -37,6 +37,7 @@ namespace RobotArm
     static long currentSteps = 0;
     static long targetSteps = 0;
     static bool abortRequested = false; // set by stop() to break stepper loop early
+    static AbortPollFn abortPollFn = nullptr; // optional callback polled during stepper move
 
     static Servo servo1, servo2;
     static int svCurrent1, svCurrent2; // current microseconds
@@ -171,7 +172,7 @@ namespace RobotArm
         targetLocation = location;
         targetSteps = stepperPosFor(location);
 
-        // Step 1: retract arms to neutral (centre = 1500 µs)
+        // Step 1: retract arms to centre (idle position) before stepper moves
         startServoMove(SERVO_CENTER_US, SERVO_CENTER_US);
         state = STATE_MOVING_TO_IDLE_ARM;
         Serial.printf("[RobotArm] Target: location %d  stepper target: %ld steps\n",
@@ -229,10 +230,11 @@ namespace RobotArm
                         else
                             currentSteps--;
 
-                        // Yield every 200 steps and check for abort
+                        // Yield every 200 steps, call abort-poll callback, check abort flag
                         if (++stepsDone % 200 == 0)
                         {
                             yield();
+                            if (abortPollFn) abortPollFn(); // let main.ino check Firebase stop
                             if (abortRequested)
                                 break;
                         }
@@ -363,7 +365,7 @@ namespace RobotArm
         if (currentLocation == 0)
             return false; // already home
 
-        // Step 1: retract servos to neutral
+        // Step 1: retract servos to centre before homing
         startServoMove(SERVO_CENTER_US, SERVO_CENTER_US);
         state = STATE_MOVING_TO_IDLE_ARM;
         // After retract completes, update() will see currentSteps != 0
@@ -382,6 +384,11 @@ namespace RobotArm
             return true;
         }
         return false;
+    }
+
+    void setAbortPollFn(AbortPollFn fn)
+    {
+        abortPollFn = fn;
     }
 
 } // namespace RobotArm
