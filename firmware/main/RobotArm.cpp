@@ -14,19 +14,28 @@ namespace RobotArm
 {
 
     // ─── Location lookup tables ───────────────────────────────────────────────
+    // ─── Location lookup tables ───────────────────────────────────────────────
     static long stepperPosFor(int loc)
     {
-        return (loc == 1 || loc == 2) ? STEPPER_POS_NEAR : STEPPER_POS_FAR;
+        switch (loc)
+        {
+            case 1: return STEPPER_POS_PLOT1;
+            case 2: return STEPPER_POS_PLOT2;
+            case 3: return STEPPER_POS_PLOT3;
+            case 4: return STEPPER_POS_PLOT4;
+            default: return 0;
+        }
     }
-    // Servo 1: +100 µs from centre for A-side (loc 1 & 3), -100 µs for B-side
+    
+    // Both servos now use the identical deployed position for all 4 plots
     static int servo1UsFor(int loc)
     {
-        return (loc == 1 || loc == 3) ? SERVO1_US_A : SERVO1_US_B;
+        return SERVO1_DEPLOY_US;
     }
-    // Servo 2: +500 µs from centre for A-side (loc 1 & 3), -500 µs for B-side
+    
     static int servo2UsFor(int loc)
     {
-        return (loc == 1 || loc == 3) ? SERVO2_US_A : SERVO2_US_B;
+        return SERVO2_DEPLOY_US;
     }
 
     // ─── Module state ─────────────────────────────────────────────────────────
@@ -34,6 +43,7 @@ namespace RobotArm
     static int currentLocation = 0; // 0 = homed, location not yet known
     static int targetLocation = 0;
     static bool justArrived = false;
+    static bool justStartedCameraWait = false;
 
     static long currentSteps = 0;
     static long targetSteps = 0;
@@ -60,95 +70,84 @@ namespace RobotArm
     static int svCurrent1, svCurrent2; // current microseconds
     static int svStart1, svStart2;
     static int svEnd1, svEnd2;
-    static unsigned long svMoveStart = 0;
-    static int svPhase = 0; // 0 = servo2 moving first, 1 = servo1 moving
+    static unsigned long svMoveLastTick = 0;
+    static unsigned long cameraDelayStart = 0;
 
     // ─── Servo smooth-move helpers ────────────────────────────────────────────
-    // Always moves servo 2 fully first, then servo 1 (sequential, not simultaneous)
+    // Configures the targets for both servos to move simultaneously
     static void startServoMove(int end1, int end2)
     {
         svStart1 = svCurrent1;
         svStart2 = svCurrent2;
         svEnd1 = end1;
         svEnd2 = end2;
-        svPhase = 0;            // servo 2 goes first
-        svMoveStart = millis();
+        svMoveLastTick = millis();
     }
 
-    // Returns true when both servo phases are complete (now blocking)
+    // Returns true when both servos have reached their targets (blocking)
     static bool tickServoMove()
     {
-        int updateInterval = 2; // fast update interval
-
-        // ── Phase 0: move servo 2 to target ──────────────────────────────
-        int diff2 = abs(svEnd2 - svStart2);
-        if (diff2 > 0)
-        {
-            float totalTimeMs2 = (diff2 / SERVO_SPEED_US_PER_S) * 1000.0;
-            int steps2 = totalTimeMs2 / updateInterval;
-            if (steps2 < 1) steps2 = 1;
-            
-            float inc2 = (float)(svEnd2 - svStart2) / steps2;
-            
-            // Hold servo 1 steady
-            servo1.writeMicroseconds(svCurrent1); 
-            
-            for (int i = 0; i <= steps2; i++)
-            {
-                // Pause handling
-                if (motionPaused)
-                {
-                    Serial.println("[RobotArm] Paused by Emergency Stop button");
-                    while (motionPaused)
-                    {
-                        delay(10);
-                        yield();
-                    }
-                    Serial.println("[RobotArm] Resumed");
-                }
-
-                svCurrent2 = svStart2 + (int)(inc2 * i);
-                servo2.writeMicroseconds(svCurrent2);
-                delay(updateInterval); // Use delay to keep timing precise and let WiFi breathe smoothly
-            }
-        }
-        svCurrent2 = svEnd2;
-
-        // ── Phase 1: move servo 1 to target ──────────────────────────────
+        int updateInterval = 10; // 10ms update interval for simultaneous movement
+        
         int diff1 = abs(svEnd1 - svStart1);
-        if (diff1 > 0)
-        {
-            float totalTimeMs1 = (diff1 / SERVO_SPEED_US_PER_S) * 1000.0;
-            int steps1 = totalTimeMs1 / updateInterval;
-            if (steps1 < 1) steps1 = 1;
-            
-            float inc1 = (float)(svEnd1 - svStart1) / steps1;
-            
-            // Hold servo 2 steady
-            servo2.writeMicroseconds(svCurrent2); 
-            
-            for (int i = 0; i <= steps1; i++)
-            {
-                // Pause handling
-                if (motionPaused)
-                {
-                    Serial.println("[RobotArm] Paused by Emergency Stop button");
-                    while (motionPaused)
-                    {
-                        delay(10);
-                        yield();
-                    }
-                    Serial.println("[RobotArm] Resumed");
-                }
+        int diff2 = abs(svEnd2 - svStart2);
 
+        // Calculate total steps needed for each servo to hit its target at the desired speed
+        // Note: SERVO_SPEED_US_PER_S is in us/s, so (diff / SERVO_SPEED_US_PER_S) gives seconds.
+        // Multiply by 1000 to get ms, then divide by updateInterval to get steps.
+        float totalTimeMs1 = (diff1 / (float)SERVO_SPEED_US_PER_S) * 1000.0;
+        float totalTimeMs2 = (diff2 / (float)SERVO_SPEED_US_PER_S) * 1000.0;
+
+        int steps1 = (int)(totalTimeMs1 / updateInterval);
+        int steps2 = (int)(totalTimeMs2 / updateInterval);
+        
+        // Find the longest path so both servos finish at roughly the same time 
+        // (alternatively, they can move at their own independent rates, but picking the max steps
+        // forces them to scale their speed to arrive together if desired. Here we will let them move
+        // at independent rates but wait until BOTH are finished).
+        
+        if (steps1 < 1 && diff1 > 0) steps1 = 1;
+        if (steps2 < 1 && diff2 > 0) steps2 = 1;
+
+        float inc1 = steps1 > 0 ? (float)(svEnd1 - svStart1) / steps1 : 0;
+        float inc2 = steps2 > 0 ? (float)(svEnd2 - svStart2) / steps2 : 0;
+
+        int maxSteps = max(steps1, steps2);
+
+        for (int i = 0; i <= maxSteps; i++)
+        {
+            // Pause handling
+            if (motionPaused)
+            {
+                Serial.println("[RobotArm] Paused by Emergency Stop button");
+                while (motionPaused)
+                {
+                    delay(10);
+                    yield();
+                }
+                Serial.println("[RobotArm] Resumed");
+            }
+
+            // Calculate current position for this step
+            if (i <= steps1) {
                 svCurrent1 = svStart1 + (int)(inc1 * i);
                 servo1.writeMicroseconds(svCurrent1);
-                delay(updateInterval); // Use delay to keep timing precise and let WiFi breathe smoothly
             }
-        }
-        svCurrent1 = svEnd1;
+            if (i <= steps2) {
+                svCurrent2 = svStart2 + (int)(inc2 * i);
+                servo2.writeMicroseconds(svCurrent2);
+            }
 
-        return true; // Both phases done
+            delay(updateInterval);
+        }
+
+        // Final snap to target to correct any float truncation errors
+        svCurrent1 = svEnd1;
+        svCurrent2 = svEnd2;
+        servo1.writeMicroseconds(svCurrent1);
+        servo2.writeMicroseconds(svCurrent2);
+
+        return true;
     }
 
     // ─── Stepper homing (blocking — called once in begin()) ──────────────────
@@ -192,10 +191,11 @@ namespace RobotArm
         servo1.attach(SERVO1_PIN);
         servo2.attach(SERVO2_PIN);
 
-        // Park servos at centre position (1500 µs)
-        svCurrent1 = svCurrent2 = SERVO_CENTER_US;
-        servo1.writeMicroseconds(SERVO_CENTER_US);
-        servo2.writeMicroseconds(SERVO_CENTER_US);
+        // Park servos at idle position
+        svCurrent1 = SERVO1_IDLE_US;
+        svCurrent2 = SERVO2_IDLE_US;
+        servo1.writeMicroseconds(svCurrent1);
+        servo2.writeMicroseconds(svCurrent2);
 
         homeStepper();
 
@@ -216,8 +216,8 @@ namespace RobotArm
         targetLocation = location;
         targetSteps = stepperPosFor(location);
 
-        // Step 1: retract arms to centre (idle position) before stepper moves
-        startServoMove(SERVO_CENTER_US, SERVO_CENTER_US);
+        // Step 1: retract arms to idle position before stepper moves
+        startServoMove(SERVO1_IDLE_US, SERVO2_IDLE_US);
         state = STATE_MOVING_TO_IDLE_ARM;
         Serial.printf("[RobotArm] Target: location %d  stepper target: %ld steps\n",
                       location, targetSteps);
@@ -301,16 +301,16 @@ namespace RobotArm
                         // Abort: retract arms to neutral and go idle
                         abortRequested = false;
                         Serial.println("[RobotArm] Abort! Retracting arms.");
-                        startServoMove(SERVO_CENTER_US, SERVO_CENTER_US);
+                        startServoMove(SERVO1_IDLE_US, SERVO2_IDLE_US);
                         state = STATE_STOPPING;
                     }
                     else
                     {
-                        Serial.printf("[RobotArm] Stepper done at %ld steps. Deploying arms.\n",
+                        Serial.printf("[RobotArm] Stepper done at %ld steps. Waiting 5000ms for camera...\n",
                                       currentSteps);
-                        // Deploy arms to final position
-                        startServoMove(servo1UsFor(targetLocation), servo2UsFor(targetLocation));
-                        state = STATE_MOVING_TO_TARGET_ARM;
+                        cameraDelayStart = millis();
+                        justStartedCameraWait = true;
+                        state = STATE_CAMERA_DELAY;
                     }
                 }
             }
@@ -320,6 +320,18 @@ namespace RobotArm
         // STATE_MOVING_STEPPER is handled inline above (blocking)
         case STATE_MOVING_STEPPER:
             break;
+
+        // ── 1.5. Pause 5 seconds for camera capture ───────────────────────────
+        case STATE_CAMERA_DELAY:
+        {
+            if (millis() - cameraDelayStart >= 5000)
+            {
+                Serial.println("[RobotArm] Camera delay complete. Deploying arms.");
+                startServoMove(servo1UsFor(targetLocation), servo2UsFor(targetLocation));
+                state = STATE_MOVING_TO_TARGET_ARM;
+            }
+            break;
+        }
 
         // ── 2. Deploy arms to final angle ─────────────────────────────────────
         case STATE_MOVING_TO_TARGET_ARM:
@@ -416,8 +428,8 @@ namespace RobotArm
             if (state != STATE_MOVING_STEPPER)
             {
                 // Overwrite pending servo target with neutral (retract)
-                svEnd1 = SERVO_CENTER_US;
-                svEnd2 = SERVO_CENTER_US;
+                svEnd1 = SERVO1_IDLE_US;
+                svEnd2 = SERVO2_IDLE_US;
                 state = STATE_STOPPING;
             }
             Serial.println("[RobotArm] Stop requested.");
@@ -433,8 +445,8 @@ namespace RobotArm
         if (currentLocation == 0)
             return false; // already home
 
-        // Step 1: retract servos to centre before homing
-        startServoMove(SERVO_CENTER_US, SERVO_CENTER_US);
+        // Step 1: retract servos to idle before homing
+        startServoMove(SERVO1_IDLE_US, SERVO2_IDLE_US);
         state = STATE_MOVING_TO_IDLE_ARM;
         // After retract completes, update() will see currentSteps != 0
         // and enter STATE_HOMING_STEPPER (targetSteps = 0 is set below)
@@ -449,6 +461,16 @@ namespace RobotArm
         if (justArrived)
         {
             justArrived = false;
+            return true;
+        }
+        return false;
+    }
+
+    bool checkAndClearCameraReady()
+    {
+        if (justStartedCameraWait)
+        {
+            justStartedCameraWait = false;
             return true;
         }
         return false;

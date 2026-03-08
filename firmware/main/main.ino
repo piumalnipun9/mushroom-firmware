@@ -11,7 +11,7 @@
 #include "SDLogger.h"
 
 // ---- Configuration: set these before upload ----
-const char *WIFI_SSID = "iPhone";
+const char *WIFI_SSID = "Pixel 6a";
 const char *WIFI_PASSWORD = "12345678";  
 
 // Example Firebase from repository; replace with your DB host and secret
@@ -212,12 +212,20 @@ void loop()
     // ===== Robot Arm: tick the non-blocking state machine =====
     RobotArm::update();
 
+    // ===== Sync Firebase when camera delay starts =====
+    if (RobotArm::checkAndClearCameraReady())
+    {
+        FirebaseHTTP::put("robotArm/status/ready", "1");
+        Serial.println("[Main] Stepper arrived. Camera delay started, ready=1 pushed.");
+    }
+
     // ===== Sync Firebase when arm finishes a move =====
     if (RobotArm::checkAndClearArrival())
     {
         int loc = RobotArm::getCurrentLocation();
         FirebaseHTTP::put("robotArm/status/currentPlot", String(loc));
         FirebaseHTTP::put("robotArm/status/state", String("\"idle\""));
+        FirebaseHTTP::put("robotArm/status/ready", "1");
         String action;
         if (loc == 0)
             action = "\"Returned to Home\"";
@@ -272,6 +280,7 @@ void loop()
                         if (dispatched)
                         {
                             FirebaseHTTP::put("robotArm/status/state", String("\"moving\""));
+                            FirebaseHTTP::put("robotArm/status/ready", "0");
                             FirebaseHTTP::put("robotArm/status/lastAction",
                                              "\"Moving to Plot " + String(target) + "\"");
                             FirebaseHTTP::put("robotArm/command/timestamp", String((unsigned long)millis()));
@@ -292,6 +301,7 @@ void loop()
                     if (dispatched)
                     {
                         FirebaseHTTP::put("robotArm/status/state", String("\"homing\""));
+                        FirebaseHTTP::put("robotArm/status/ready", "0");
                         FirebaseHTTP::put("robotArm/status/lastAction", String("\"Returning Home\""));
                         Serial.println("[Main] Arm dispatched home.");
                     }
